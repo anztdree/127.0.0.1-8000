@@ -24,7 +24,10 @@
     </style>
 </head>
 
+
+
 <script src="sdk/sdk.js"></script>
+
 
 <body>
     <div style="margin: auto;width: 100%;height: 100%;" class="egret-player" data-entry-class="Main"
@@ -37,9 +40,9 @@
     
     <script>
         window["Log_Clean"] = true;
-        window["debug"] = false;
+        window["debug"] = true;
         window["CacheNum"] = 20;
-        window["reportBattlleLog"] = "http://127.0.0.1:8090/error/battle/client";
+        window["reportBattlleLog"] = "http://127.0.0.1:8080/error/battle/client";
         window["privacyUrl"] = "http://127.0.0.1:8080/privacy_en.html";
         var thirdParams = null; //第三方sdk的参数
         var loginServer = null; //登录服
@@ -118,8 +121,8 @@
                         window["supportLang"] = clientParams["supportLang"];
                         window["battleAudio"] = clientParams["battleAudio"];
                         window["showUserCenterSdk"] = clientParams["showUserCenterSdk"];
-                         window["showContact"] = clientParams["showContact"];
-                         window["switchAccount"] = clientParams["switchAccount"];
+                        window["showContact"] = clientParams["showContact"];
+                        window["switchAccount"] = clientParams["switchAccount"];
                         window["sdkNativeChannel"] = clientParams["sdkNativeChannel"];
                         window["showCurChannel"] = clientParams["showCurChannel"];
                     }

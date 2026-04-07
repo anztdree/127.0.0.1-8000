@@ -17,7 +17,7 @@
    "server/main-server/user/entergame.js",
    "server/main-server/user/registChat.js",
    "server/main-server/user/getBulletinBrief.js",
-   "server/chat-server.js
+   "server/chat-server.js",
 		"js/blockmessage.min_7dc7bcec.js",
 		"js/battlelogic.min_d446437e.js",
 		"js/ThinkingAnalyticsSDK.min_72d3fad5.js",

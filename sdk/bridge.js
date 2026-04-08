@@ -440,8 +440,13 @@
             LOG.success('User data cleared via LOCAL_SDK.resetUser()');
         } else {
             // Fallback: langsung hapus localStorage
+            // FIXED: Gunakan LOCAL_SDK.STORAGE_KEY bukan hardcoded string,
+            // agar tetap sinkron jika STORAGE_KEY berubah di sdk.js
             try {
-                localStorage.removeItem('dragonball_local_sdk');
+                var sdkStorageKey = (typeof window.LOCAL_SDK !== 'undefined' && window.LOCAL_SDK.STORAGE_KEY) 
+                    ? window.LOCAL_SDK.STORAGE_KEY 
+                    : 'dragonball_local_sdk';
+                localStorage.removeItem(sdkStorageKey);
                 LOG.success('User data cleared directly from localStorage');
             } catch (e) {
                 LOG.error('Failed to clear user data:', e);

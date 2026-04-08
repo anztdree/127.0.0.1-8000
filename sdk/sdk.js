@@ -40,7 +40,14 @@
  *   Karena versi index.html memanggil ExternalInterface yang
  *   ditangani bridge.js, jadi tetap berfungsi.
  * 
- * Version: 3.0.0
+ * Version: 3.1.0
+ * ============================================================
+ * 
+ * v3.1.0 Changelog:
+ *   FIX: resetUser() sekarang di-wrap try-catch (sebelumnya bisa throw)
+ *   FIX: Semua empty catch block sekarang log warning (sebelumnya silent)
+ *   FIX: Expose STORAGE_KEY via LOCAL_SDK agar bridge.js bisa reference
+ *   FIX: openURL dan window.open catch sekarang log error
  * ============================================================
  */
 
@@ -138,7 +145,7 @@
                     return parsed;
                 }
             }
-        } catch (e) {}
+        } catch (e) { LOG.warn('Failed to load user data:', e); }
         var data = {
             userId: generateUserId(),
             nickname: 'Player_' + Math.floor(Math.random() * 9999),
@@ -148,7 +155,7 @@
             createdAt: Date.now(),
             lastLogin: Date.now()
         };
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) { LOG.warn('Failed to save new user data:', e); }
         LOG.success('Created new user:', data.userId);
         return data;
     }
@@ -158,7 +165,7 @@
     userData.lastLogin = Date.now();
     userData.sign = generateSign();
     userData.loginToken = generateLoginToken();
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(userData)); } catch (e) {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(userData)); } catch (e) { LOG.warn('Failed to save refreshed user data:', e); }
 
     // ========================================================
     // 6. CONFIG
@@ -167,7 +174,7 @@
         try {
             var lang = localStorage.getItem(STORAGE_LANG_KEY);
             if (lang) return lang;
-        } catch (e) {}
+        } catch (e) { LOG.warn('Failed to load saved language:', e); }
         return getQueryStringValue('language') || 'en';
     }
 
@@ -526,7 +533,7 @@
         SDK_CONFIG.thirdParams.data.nickname = userData.nickname;
         SDK_CONFIG.thirdParams.data.userid = userData.userId;
         SDK_CONFIG.thirdParams.data.securityCode = userData.token;
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(userData)); } catch (e) {}
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(userData)); } catch (e) { LOG.warn('Failed to save switched user data:', e); }
         LOG.success('New user:', userData.userId);
         window.location.reload();
     };
@@ -663,7 +670,7 @@
     window.changeLanguage = function(lang) {
         LOG.call('changeLanguage(' + lang + ')');
         SDK_CONFIG.language = lang;
-        try { localStorage.setItem(STORAGE_LANG_KEY, lang); } catch (e) {}
+        try { localStorage.setItem(STORAGE_LANG_KEY, lang); } catch (e) { LOG.warn('Failed to save language:', e); }
     };
 
     /**
@@ -676,7 +683,7 @@
     window.openURL = function(url) {
         LOG.call('openURL(' + url + ')');
         if (url && _nativeWindowOpen) {
-            try { _nativeWindowOpen.call(window, url, '_blank'); } catch (e) {}
+            try { _nativeWindowOpen.call(window, url, '_blank'); } catch (e) { LOG.warn('openURL failed:', e); }
         }
     };
 
@@ -687,7 +694,7 @@
     window.open = function(url, target) {
         LOG.call('open(' + url + ')');
         if (url && _nativeWindowOpen) {
-            try { _nativeWindowOpen.call(window, url, target || '_blank'); } catch (e) {}
+            try { _nativeWindowOpen.call(window, url, target || '_blank'); } catch (e) { LOG.warn('window.open failed:', e); }
         }
     };
 
@@ -784,6 +791,8 @@
     window.LOCAL_SDK = {
         config: SDK_CONFIG,
         user: userData,
+        STORAGE_KEY: STORAGE_KEY,
+        STORAGE_LANG_KEY: STORAGE_LANG_KEY,
         getStartGameData: getStartGameData,
         getSdkLoginInfo: function() { return window.getSdkLoginInfo(); },
         
@@ -797,7 +806,7 @@
         saveLanguage: function(lang) {
             if (lang) {
                 SDK_CONFIG.language = lang;
-                try { localStorage.setItem(STORAGE_LANG_KEY, lang); } catch (e) {}
+                try { localStorage.setItem(STORAGE_LANG_KEY, lang); } catch (e) { LOG.warn('Failed to save language via bridge:', e); }
                 LOG.success('Language saved via bridge: ' + lang);
             }
         },
@@ -806,8 +815,12 @@
         // Karena index.html's switchUser tidak reset userData,
         // bridge HARUS clear localStorage agar sdk.js buat user baru
         resetUser: function() {
-            localStorage.removeItem(STORAGE_KEY);
-            LOG.success('User data cleared. New user will be created on reload.');
+            try {
+                localStorage.removeItem(STORAGE_KEY);
+                LOG.success('User data cleared. New user will be created on reload.');
+            } catch (e) {
+                LOG.warn('Failed to clear user data:', e);
+            }
         },
 
         // Panggil exit callback (jika terdaftar)
@@ -836,7 +849,7 @@
             SDK_CONFIG.thirdParams.data.nickname = userData.nickname;
             SDK_CONFIG.thirdParams.data.userid = userData.userId;
             SDK_CONFIG.thirdParams.data.securityCode = userData.token;
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(userData)); } catch (e) {}
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(userData)); } catch (e) { LOG.warn('Failed to save generated user data:', e); }
             this.user = userData;
             LOG.success('New user generated:', userData.userId);
             return userData;

@@ -1,0 +1,79 @@
+{
+  "sessions": {
+    "mnvwij4q_7b367e2dbeb88523dd136e33a3b7b809c25d71e282f1466c": {
+      "userId": "1",
+      "createdAt": "2026-04-12T15:11:07.618Z",
+      "expiresAt": 1776611467617
+    },
+    "mnvzgw4d_724af5046dc750666c9c6ddbab0b060a6408891c8d6fe437": {
+      "userId": "2",
+      "createdAt": "2026-04-12T16:33:49.989Z",
+      "expiresAt": 1776616429988
+    },
+    "mnvzi714_990d2203918598cafaca118d734c2cd45004dec8ff60b12d": {
+      "userId": "3",
+      "createdAt": "2026-04-12T16:34:50.780Z",
+      "expiresAt": 1776616490780
+    },
+    "mnvzu7pc_335008aea37fb4e254e1cc1f231021e527bef9ceb6ea06ae": {
+      "userId": "4",
+      "createdAt": "2026-04-12T16:44:11.527Z",
+      "expiresAt": 1776617051527
+    },
+    "mnwhww34_35df9e34026cc1dadfcd9c70f5e85fa9052e8e6040742092": {
+      "userId": "5",
+      "createdAt": "2026-04-13T01:10:09.531Z",
+      "expiresAt": 1776647409531
+    },
+    "mnwiabsi_0c4363c0d459152ad20723c337e0f537eaeb9639fe2c5002": {
+      "userId": "6",
+      "createdAt": "2026-04-13T01:20:36.406Z",
+      "expiresAt": 1776648036406
+    },
+    "mnx4toio_644d09d1d3fa08529534f0d07adf59f1c88598b5e236256e": {
+      "userId": "7",
+      "createdAt": "2026-04-13T11:51:30.918Z",
+      "expiresAt": 1776685890918
+    },
+    "mnx5amdy_cac4cb804b09bb628cce7540dc886fe40088bb3d03710343": {
+      "userId": "8",
+      "createdAt": "2026-04-13T12:04:41.308Z",
+      "expiresAt": 1776686681308
+    },
+    "mnxjgtsq_0183f747052a15d7589cf5d5f0c9e05ee0b80021c1a8891e": {
+      "userId": "9",
+      "createdAt": "2026-04-13T18:41:25.474Z",
+      "expiresAt": 1776710485474
+    },
+    "mnxktj0k_e40870a15319bc7d5fa51c05c4be47c115ff13a9c4c615aa": {
+      "userId": "10",
+      "createdAt": "2026-04-13T19:19:17.642Z",
+      "expiresAt": 1776712757642
+    },
+    "mnxl2kbh_6ac4d51ebc31063c98bb141c8f1867d239dad0717760f32e": {
+      "userId": "11",
+      "createdAt": "2026-04-13T19:26:19.237Z",
+      "expiresAt": 1776713179237
+    },
+    "mnxlt0ml_53b28ea4179402259fdae29a4bed1b2c8defeb2b30c0b780": {
+      "userId": "12",
+      "createdAt": "2026-04-13T19:46:53.426Z",
+      "expiresAt": 1776714413426
+    },
+    "mnxlvkmi_aa231322f009e5812176252cbbbdaf8a82540bede6696edf": {
+      "userId": "13",
+      "createdAt": "2026-04-13T19:48:52.654Z",
+      "expiresAt": 1776714532654
+    },
+    "mnxm5ja7_3e188a83a5e16c5c44052ba103ab7a0d428844d57f7d2af1": {
+      "userId": "14",
+      "createdAt": "2026-04-13T19:56:37.476Z",
+      "expiresAt": 1776714997476
+    },
+    "mnxmlp7g_353654b40d1163973957552a482d5ddd56b3f236230eddd6": {
+      "userId": "15",
+      "createdAt": "2026-04-13T20:09:11.649Z",
+      "expiresAt": 1776715751649
+    }
+  }
+}

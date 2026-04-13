@@ -577,36 +577,23 @@
             return this._bytesToString(result);
         },
 
-        // Byte conversion helpers
+        // BUG FIX #5: TEACipher byte encoding — changed from UTF-8 to Latin-1
+        // The game's original TEA cipher uses 1 char = 1 byte (Latin-1/ISO-8859-1),
+        // NOT UTF-8 multi-byte encoding. Using UTF-8 would produce wrong byte
+        // counts for non-ASCII characters, breaking the 8-byte block alignment.
+        // Each character is encoded as a single byte: charCodeAt(i) & 0xFF
         _stringToBytes: function (str) {
             var bytes = [];
             for (var i = 0; i < str.length; i++) {
-                var code = str.charCodeAt(i);
-                if (code < 128) {
-                    bytes.push(code);
-                } else if (code < 2048) {
-                    bytes.push(192 | (code >> 6), 128 | (code & 63));
-                } else {
-                    bytes.push(224 | (code >> 12), 128 | ((code >> 6) & 63), 128 | (code & 63));
-                }
+                bytes.push(str.charCodeAt(i) & 0xFF);
             }
             return bytes;
         },
 
         _bytesToString: function (bytes) {
             var str = '';
-            var i = 0;
-            while (i < bytes.length) {
-                if (bytes[i] < 128) {
-                    str += String.fromCharCode(bytes[i]);
-                    i++;
-                } else if (bytes[i] < 224) {
-                    str += String.fromCharCode(((bytes[i] & 31) << 6) | (bytes[i + 1] & 63));
-                    i += 2;
-                } else {
-                    str += String.fromCharCode(((bytes[i] & 15) << 12) | ((bytes[i + 1] & 63) << 6) | (bytes[i + 2] & 63));
-                    i += 3;
-                }
+            for (var i = 0; i < bytes.length; i++) {
+                str += String.fromCharCode(bytes[i]);
             }
             return str;
         },
@@ -1940,6 +1927,34 @@
     };
 
     /**
+     * window.getClientServer()
+     * Called by: TSBrowser.executeFunction("getClientServer")
+     * Also: TSBrowser.getVariantValue("clientServer") → window.clientServer
+     *
+     * Returns the client server URL (Weixin only).
+     * Empty string for non-Weixin platforms.
+     *
+     * @returns {string} Client server URL or empty string
+     */
+    window.getClientServer = function () {
+        return SDK_CONFIG.CLIENT_SERVER_URL;
+    };
+
+    /**
+     * window.getSubChannel()
+     * Called by: TSBrowser.executeFunction("getSubChannel")
+     * Also: TSBrowser.getVariantValue("subChannel") → window.subChannel
+     *
+     * Returns the sub-channel identifier used by the game for
+     * reporting and feature toggling.
+     *
+     * @returns {string} Sub-channel identifier (e.g., APP_ID)
+     */
+    window.getSubChannel = function () {
+        return SDK_CONFIG.APP_ID;
+    };
+
+    /**
      * window.changeLanguage(lang)
      * Called by: TSBrowser.executeFunction("changeLanguage", language) at line 77249
      * Also: window.changeLanguage(lang) at line 77249 (fallback when server save fails)
@@ -2052,6 +2067,43 @@
 
         if (typeof exitGameFn === 'function') {
             _state.exitGameFn = exitGameFn;
+        }
+    };
+
+    /**
+     * window.exitGame()
+     * Called by: TSBrowser.executeFunction("exitGame") in main.min.js
+     *
+     * Triggers the game's exit routine. If the exitGameFn callback was
+     * previously stored via accountLoginCallback, calls it. Otherwise
+     * falls back to SDK logout + page reload.
+     *
+     * The exitGameFn from main.min.js (ts.exitGame) disconnects all sockets,
+     * clears singletons, and returns to the login scene. It may or may not
+     * return a Promise depending on the game version.
+     */
+    window.exitGame = function () {
+        sdkLog('info', 'Window', 'exitGame called');
+
+        if (_state.exitGameFn && typeof _state.exitGameFn === 'function') {
+            try {
+                var result = _state.exitGameFn();
+                // Handle both Promise and non-Promise return values safely
+                if (result && typeof result.then === 'function') {
+                    result.then(function () {
+                        sdkLog('debug', 'Window', 'exitGameFn completed (async)');
+                    }).catch(function (err) {
+                        sdkLog('warn', 'Window', 'exitGameFn promise rejected: ' + (err && err.message || err));
+                    });
+                } else {
+                    sdkLog('debug', 'Window', 'exitGameFn completed (sync)');
+                }
+            } catch (e) {
+                sdkLog('warn', 'Window', 'exitGameFn threw: ' + e.message);
+            }
+        } else {
+            sdkLog('debug', 'Window', 'No exitGameFn stored — falling back to logout');
+            handleLogout();
         }
     };
 
@@ -2357,9 +2409,23 @@
 
         // If we have the exit game function, use it
         if (_state.exitGameFn && typeof _state.exitGameFn === 'function') {
-            _state.exitGameFn().then(function () {
+            try {
+                var result = _state.exitGameFn();
+                // Handle both Promise and non-Promise return values safely
+                if (result && typeof result.then === 'function') {
+                    result.then(function () {
+                        handleLogout();
+                    }).catch(function (err) {
+                        sdkLog('warn', 'Window', 'exitGameFn rejected during switchAccount: ' + (err && err.message || err));
+                        handleLogout();
+                    });
+                } else {
+                    handleLogout();
+                }
+            } catch (e) {
+                sdkLog('warn', 'Window', 'exitGameFn threw during switchAccount: ' + e.message);
                 handleLogout();
-            });
+            }
         } else {
             handleLogout();
         }
@@ -2379,9 +2445,23 @@
 
         // If we have the exit game function, use it
         if (_state.exitGameFn && typeof _state.exitGameFn === 'function') {
-            _state.exitGameFn().then(function () {
+            try {
+                var result = _state.exitGameFn();
+                // Handle both Promise and non-Promise return values safely
+                if (result && typeof result.then === 'function') {
+                    result.then(function () {
+                        handleLogout();
+                    }).catch(function (err) {
+                        sdkLog('warn', 'Window', 'exitGameFn rejected during switchUser: ' + (err && err.message || err));
+                        handleLogout();
+                    });
+                } else {
+                    handleLogout();
+                }
+            } catch (e) {
+                sdkLog('warn', 'Window', 'exitGameFn threw during switchUser: ' + e.message);
                 handleLogout();
-            });
+            }
         } else {
             handleLogout();
         }
@@ -2533,6 +2613,24 @@
     window.clientserver = SDK_CONFIG.CLIENT_SERVER_URL;
 
     /**
+     * window.clientServer (camelCase)
+     * Read by: TSBrowser.getVariantValue("clientServer")
+     *
+     * Alias for window.clientserver — some code paths use camelCase.
+     * Empty string = standard behavior (non-Weixin)
+     */
+    window.clientServer = SDK_CONFIG.CLIENT_SERVER_URL;
+
+    /**
+     * window.subChannel
+     * Read by: TSBrowser.getVariantValue("subChannel")
+     *
+     * Sub-channel identifier used in reporting and login requests.
+     * main.min.js uses this as the subChannel in clientLoginUser.
+     */
+    window.subChannel = SDK_CONFIG.APP_ID;
+
+    /**
      * Additional window variables read directly (not via TSBrowser):
      */
 
@@ -2624,7 +2722,24 @@
      * "tanwan55en" = TanWan English (switch account, user center, FB Live)
      * "tc" = Taiwan channel (special report format)
      */
-    window.sdkNativeChannel = 'en';
+    // BUG FIX #2: sdkNativeChannel — was hardcoded 'en', now dynamic from URL sdk param
+    // The game uses this to determine which features to show (FB, Yahoo, Google for "en", etc.)
+    window.sdkNativeChannel = (function () {
+        try {
+            var params = getUrlParams();
+            var sdk = params.sdk || params.SDK || '';
+            // Map known channel values; default to 'en' if not recognized
+            var knownChannels = ['en', 'kr', 'vi', 'jr', 'sylz', 'tc', 'tanwan55en'];
+            for (var i = 0; i < knownChannels.length; i++) {
+                if (sdk.toLowerCase() === knownChannels[i]) {
+                    return knownChannels[i];
+                }
+            }
+            // If sdk param is 'ppgame' (our default), map to 'en' for feature flags
+            if (sdk.toLowerCase() === 'ppgame') return 'en';
+        } catch (e) { /* fallback */ }
+        return 'en';
+    })();
 
     /**
      * window.showCurChannel
@@ -2715,6 +2830,20 @@
      * undefined = only show client version (no resource version suffix)
      */
     window.version = undefined;
+
+    // ========================================================================
+    // BUG FIX #3: getQueryStringByName safety guard
+    // index.html (line 39-45) defines this, but we provide a fallback in case
+    // it's not available or loaded out of order. main.min.js calls this via
+    // TSBrowser.executeFunction("getQueryStringByName", name).
+    // We only set it if window.getQueryStringByName is NOT already defined
+    // to avoid overriding index.html's version.
+    if (typeof window.getQueryStringByName !== 'function') {
+        window.getQueryStringByName = function (name) {
+            var params = getUrlParams();
+            return params[name] || '';
+        };
+    }
 
     // ========================================================================
     // SECTION 12: PPGAME OBJECT ASSIGNMENT

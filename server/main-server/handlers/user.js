@@ -99,32 +99,42 @@ async function enterGame(socket, parsed, callback) {
 
     try {
         // =============================================
-        // Step 1: Validate loginToken (optional — skip if not present)
+        // Step 1: Validate loginToken (MANDATORY)
         // =============================================
         // loginToken comes from SaveHistory response on login-server.
-        // In dev mode or when login-server is not running, loginToken may not exist.
-        // We allow enterGame without token validation in this case.
-        if (loginToken) {
-            try {
-                var tokenRows = await DB.query(
-                    'SELECT * FROM login_tokens WHERE user_id = ? AND token = ? AND used = 0 AND expires_at > ?',
-                    [userId, loginToken, Date.now()]
-                );
-                if (tokenRows.length === 0) {
-                    // Token not found or expired — allow in dev mode, but log warning
-                    logger.warn('USER', 'enterGame: loginToken not validated for userId=' + userId);
-                } else {
-                    // Mark token as used (single-use)
-                    await DB.query(
-                        'UPDATE login_tokens SET used = 1 WHERE user_id = ? AND token = ?',
-                        [userId, loginToken]
-                    );
-                    logger.info('USER', 'enterGame: loginToken validated for userId=' + userId);
-                }
-            } catch (tokenErr) {
-                // login_tokens table might not exist yet — allow enterGame anyway
-                logger.warn('USER', 'enterGame: token check failed: ' + tokenErr.message);
+        // Login-server saves it to login_tokens table (single-use, 24h expiry).
+        // We validate it here — NO bypass, NO dev mode fallback.
+        //
+        // Client flow: loginGame → SaveHistory → clientStartGame → enterGame
+        // enterGame request (line 77350-77358):
+        //   { type:"user", action:"enterGame", loginToken, userId, serverId, version, language, gameVersion }
+        //
+        // If validation fails, client shows error (ret !== 0) and may reload page (ret=38).
+        if (!loginToken) {
+            logger.warn('USER', 'enterGame: missing loginToken for userId=' + userId);
+            return callback(RH.error(RH.ErrorCode.SESSION_EXPIRED, 'Missing loginToken'));
+        }
+
+        try {
+            var tokenRows = await DB.query(
+                'SELECT * FROM login_tokens WHERE user_id = ? AND token = ? AND used = 0 AND expires_at > ?',
+                [userId, loginToken, Date.now()]
+            );
+            if (tokenRows.length === 0) {
+                // Token not found, expired, or already used
+                logger.warn('USER', 'enterGame: invalid/expired loginToken for userId=' + userId);
+                return callback(RH.error(RH.ErrorCode.LOGIN_CHECK_FAILED, 'Invalid or expired loginToken'));
             }
+            // Mark token as used (single-use — each enterGame needs a fresh token)
+            await DB.query(
+                'UPDATE login_tokens SET used = 1 WHERE user_id = ? AND token = ?',
+                [userId, loginToken]
+            );
+            logger.info('USER', 'enterGame: loginToken validated and consumed for userId=' + userId);
+        } catch (tokenErr) {
+            // login_tokens table doesn't exist — DB not initialized properly
+            logger.error('USER', 'enterGame: loginToken validation failed (DB error): ' + tokenErr.message);
+            return callback(RH.error(RH.ErrorCode.LOGIN_CHECK_FAILED, 'Server database error'));
         }
 
         // =============================================
@@ -287,9 +297,8 @@ async function registChat(socket, parsed, callback) {
     logger.info('USER', 'registChat: userId=' + userId);
 
     // Check if chat-server is configured
-    var config = require('../../shared/config');
-
-    var chatServerUrl = 'http://127.0.0.1:' + config.config.ports.chat;
+    var configModule = require('../../shared/config');
+    var chatServerUrl = 'http://127.0.0.1:' + configModule.config.ports.chat;
 
     // Return chat registration info
     // Client reads: n._success, n._chatServerUrl, n._worldRoomId, n._guildRoomId, etc.

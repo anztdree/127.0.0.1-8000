@@ -206,6 +206,9 @@ async function handleLoginGame(socket, payload, callback) {
             [
                 userId,
                 password || 'game_origin', // Default password from client line 88641
+                // SECURITY NOTE: Plaintext password storage is DEV-ONLY practice.
+                // The client sends raw passwords with no hashing (line 88576-88584).
+                // Production servers should hash passwords before storage.
                 nickName || '',
                 headImageUrl || '',
                 fromChannel || '',
@@ -409,10 +412,15 @@ async function handleSaveHistory(payload, callback) {
 
     info('LoginServer', `SaveHistory: userId=${accountToken}, serverId=${serverId}`);
 
-    // TODO Phase 2+: Track actual daily login count per user
+    // FIX 8: Track actual daily login count per user (in-memory for now)
+    // Client checks todayLoginCount === 4 (line 88609) and === 6 (line 88610)
+    // to fire analytics events via ToolCommon.ReportToSdkCommon().
+    const loginCountKey = accountToken + '_' + new Date().toISOString().slice(0, 10);
+    if (!global._loginCounts) global._loginCounts = {};
+    global._loginCounts[loginCountKey] = (global._loginCounts[loginCountKey] || 0) + 1;
     const responseData = {
         loginToken: generateLoginToken(accountToken),
-        todayLoginCount: 1,  // Required by client (line 88608)
+        todayLoginCount: global._loginCounts[loginCountKey],
     };
 
     if (callback) {

@@ -45,12 +45,16 @@ var path = require('path');
 // =============================================
 // 1. LOAD CONFIGURATION
 // =============================================
-var config = require('../shared/config');
-config.validateConfig();
+// Module exports: { config, getServerList, validateConfig }
+// We destructure so 'config' refers to the actual config object,
+// not the module (avoids redundant config.config.xxx access)
+var configModule = require('../shared/config');
+configModule.validateConfig();
+var config = configModule.config;
 
-var SERVER_PORT = config.config.servers.main.port;
-var SERVER_HOST = config.config.servers.main.host;
-var TEA_KEY = config.config.security.teaKey || 'verification';
+var SERVER_PORT = config.servers.main.port;
+var SERVER_HOST = config.servers.main.host;
+var TEA_KEY = config.security.teaKey || 'verification';
 
 console.log('');
 console.log('================================================');

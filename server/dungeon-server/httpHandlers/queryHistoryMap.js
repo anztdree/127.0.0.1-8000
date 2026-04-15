@@ -16,7 +16,7 @@
 
 'use strict';
 
-var GameData = require('../../server/shared/gameData/loader');
+var GameData = require('../../shared/gameData/loader');
 var responseBuilder = require('../utils/responseBuilder');
 
 /**

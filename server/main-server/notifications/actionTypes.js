@@ -5,24 +5,20 @@
  *
  *  100% derived from client code analysis (main.min.js).
  *
- *  Client listens for server-push via "Notify" event:
- *    socket.on("Notify", function(data) {
- *        if ("SUCCESS" == data.ret) { ... }
+ *  Client listens for server-push via "Notify" event (line 77182):
+ *    socket.on("Notify", function(t) {
+ *        if ("SUCCESS" == t.ret) {
+ *            var o = JSON.parse(t.data);
+ *            if ("Kickout" == o.action) { ... return }
+ *            ts.notifyData(o);  // dispatches by o.action
+ *        }
  *    })
  *
- *  Inside data, client checks data.action to determine
- *  what kind of notification it received.
+ *  CRITICAL FIX #2 & #4: All action strings MUST match client EXACTLY.
+ *  Client uses STRICT string comparison — case-sensitive, no fuzzy match.
  *
- *  Client handler routing (line 77182-77220):
- *    switch(data.action) {
- *        case "kickout": ...
- *        case "payFinish": ...
- *        case "mailNew": ...
- *        ... 42 action types total
- *    }
- *
- *  CRITICAL: Action string values MUST match client exactly.
- *  Client uses string comparison, NOT numeric codes.
+ *  Source: ts.notifyData(o) dispatcher (line 77032-77090)
+ *  Source: line 77186 kickout check ("Kickout" with capital K)
  * =====================================================
  */
 
@@ -36,156 +32,216 @@
  */
 var NOTIFY_ACTION = {
     // =============================================
-    // P0 — Core Flow (impact login/gameplay)
+    // CORE — Verified from client code
     // =============================================
 
-    /** Client receives "kicked" event → shows "Account logged in elsewhere" dialog */
-    KICKOUT: 'kickout',
+    /**
+     * KICKOUT — Client (line 77186): if("Kickout" == o.action)
+     * CRITICAL: Capital "K" — client uses exact string match.
+     * Triggers: destroy sockets, go to Login scene, show error dialog
+     */
+    KICKOUT: 'Kickout',
 
-    /** Payment completed — client refreshes diamond/gold balance */
+    /** PAY_FINISH — Client: if("payFinish" == n) */
     PAY_FINISH: 'payFinish',
 
-    /** New mail received — client refreshes mail list */
-    MAIL_NEW: 'mailNew',
+    /** TIME_BONUS — Client: if("timeBonus" == n) */
+    TIME_BONUS: 'timeBonus',
 
-    /** Chat message received — client displays in chat panel */
-    CHAT_MSG: 'chatMsg',
+    /** HERO_BACKPACK_FULL — Client: if("heroBackpackFull" == n) */
+    HERO_BACKPACK_FULL: 'heroBackpackFull',
 
-    // =============================================
-    // P1 — Social / Guild
-    // =============================================
-
-    /** Guild member joined/updated */
-    GUILD_MEMBER_UPDATE: 'guildMemberUpdate',
-
-    /** Guild info updated (name, level, announcement) */
-    GUILD_INFO_UPDATE: 'guildInfoUpdate',
-
-    /** Guild application received */
-    GUILD_APPLY: 'guildApply',
-
-    /** Guild application approved/rejected */
-    GUILD_APPLY_RESULT: 'guildApplyResult',
-
-    /** Guild kicked/expelled member */
-    GUILD_KICK: 'guildKick',
-
-    /** Guild disbanded */
-    GUILD_DISBAND: 'guildDisband',
-
-    /** Guild boss event notification */
-    GUILD_BOSS: 'guildBoss',
-
-    /** Guild treasure notification */
-    GUILD_TREASURE: 'guildTreasure',
-
-    // =============================================
-    // P1 — PvP / Battle
-    // =============================================
-
-    /** Arena ranking updated after being attacked */
-    ARENA_UPDATE: 'arenaUpdate',
-
-    /** Top battle ranking updated */
-    TOP_BATTLE_UPDATE: 'topBattleUpdate',
-
-    /** Friend battle challenge received */
-    FRIEND_BATTLE: 'friendBattle',
-
-    /** Revenge battle available (arena) */
-    ARENA_REVENGE: 'arenaRevenge',
-
-    // =============================================
-    // P1 — Activity / Events
-    // =============================================
-
-    /** Activity opened/started */
-    ACTIVITY_OPEN: 'activityOpen',
-
-    /** Activity closed/ended */
-    ACTIVITY_CLOSE: 'activityClose',
-
-    /** Activity reward available */
-    ACTIVITY_REWARD: 'activityReward',
-
-    /** Server announcement / broadcast message */
+    /** BROADCAST — Client: if("broadcast" == n) */
     BROADCAST: 'broadcast',
 
-    /** Online bonus timer tick */
-    ONLINE_BONUS: 'onlineBonus',
+    /** ONLINE_BULLETIN — Client: if("onlineBulletin" == n) */
+    ONLINE_BULLETIN: 'onlineBulletin',
 
-    /** Daily sign-in refreshed */
-    SIGN_IN_REFRESH: 'signInRefresh',
+    /** SCHEDULE_MODEL_REFRESH — Client: if("scheduleModelRefresh" == n)
+     *  Sends scheduleInfo model to refresh AllRefreshCount counters */
+    SCHEDULE_MODEL_REFRESH: 'scheduleModelRefresh',
 
-    /** Download milestone reward available */
-    DOWNLOAD_REWARD: 'downloadReward',
+    /** MONTH_CARD — Client: if("monthCard" == n) */
+    MONTH_CARD: 'monthCard',
 
-    // =============================================
-    // P2 — Team / Dungeon
-    // =============================================
+    /** VIP_LEVEL — Client: if("vipLevel" == n) */
+    VIP_LEVEL: 'vipLevel',
 
-    /** Team dungeon invite received */
-    TEAM_DUNGEON_INVITE: 'teamDungeonInvite',
-
-    /** Team dungeon member joined/left */
-    TEAM_DUNGEON_UPDATE: 'teamDungeonUpdate',
-
-    /** Team dungeon battle started */
-    TEAM_DUNGEON_START: 'teamDungeonStart',
-
-    /** Team dungeon reward distributed */
-    TEAM_DUNGEON_REWARD: 'teamDungeonReward',
+    /** NOTIFY_SUMMON — Client: if("notifySummon" == n) */
+    NOTIFY_SUMMON: 'notifySummon',
 
     // =============================================
-    // P2 — World Boss
+    // GUILD
     // =============================================
 
-    /** World boss spawned */
-    WORLD_BOSS_SPAWN: 'worldBossSpawn',
+    /** GUILD_AGREE — Client: if("guildAgree" == n) || if("beKickedOutGuild" == n) */
+    GUILD_AGREE: 'guildAgree',
 
-    /** World boss died */
-    WORLD_BOSS_DIE: 'worldBossDie',
-
-    /** World boss rank updated */
-    WORLD_BOSS_RANK: 'worldBossRank',
+    /** GUILD_BE_KICKED — Client: if("beKickedOutGuild" == n) */
+    GUILD_BE_KICKED: 'beKickedOutGuild',
 
     // =============================================
-    // P2 — Dragon Ball War
+    // GLOBAL WAR
     // =============================================
 
-    /** Dragon Ball War started */
-    DRAGON_BALL_WAR_START: 'dragonBallWarStart',
+    /** WAR_STAGE_CHANGE — Client: if("warStageChange" == n) */
+    WAR_STAGE_CHANGE: 'warStageChange',
 
-    /** Dragon Ball War ended */
-    DRAGON_BALL_WAR_END: 'dragonBallWarEnd',
+    /** WAR_RANK_CHANGE — Client: if("warRankChange" == n) */
+    WAR_RANK_CHANGE: 'warRankChange',
 
-    /** Dragon Ball War rank update */
-    DRAGON_BALL_WAR_RANK: 'dragonBallWarRank',
+    /** WAR_AUTO_SIGN — Client: if("warAutoSign" == n) */
+    WAR_AUTO_SIGN: 'warAutoSign',
 
     // =============================================
-    // P2 — Misc
+    // BALL WAR
     // =============================================
 
-    /** Black market / boss competition notification */
-    BOSS_COMPETITION: 'bossCompetition',
+    /** BALL_WAR_STATE_CHANGE — Client: if("ballWarStateChange" == n) */
+    BALL_WAR_STATE_CHANGE: 'ballWarStateChange',
 
-    /** Questionnaire / survey available */
-    QUESTIONNAIRE: 'questionnaire',
+    /** BALL_WAR_POINT_RANK — Client: if("ballWarPointRankChange" == n) */
+    BALL_WAR_POINT_RANK: 'ballWarPointRankChange',
 
-    /** Friend online/offline status change */
-    FRIEND_ONLINE: 'friendOnline',
+    /** BALL_SIGN_UP — Client: if("ballSignUp" == n) */
+    BALL_SIGN_UP: 'ballSignUp',
 
-    /** Expedition speed-up complete */
-    EXPEDITION_COMPLETE: 'expeditionComplete',
+    // =============================================
+    // USER / SOCIAL
+    // =============================================
 
-    /** Server maintenance warning */
+    /** USER_MESSAGE — Client: if("userMessage" == n) */
+    USER_MESSAGE: 'userMessage',
+
+    /** MAIN_TASK_CHANGE — Client: if("mainTaskChange" == n) */
+    MAIN_TASK_CHANGE: 'mainTaskChange',
+
+    /** RED_DOT_DATA_CHANGE — Client: if("redDotDataChange" == n) */
+    RED_DOT_DATA_CHANGE: 'redDotDataChange',
+
+    // =============================================
+    // ARENA
+    // =============================================
+
+    /** ARENA_RECORD — Client: if("areanRecord" == n)
+     *  NOTE: "arean" is a TYPO in the client code — must match exactly! */
+    ARENA_RECORD: 'areanRecord',
+
+    // =============================================
+    // BATTLE MEDAL
+    // =============================================
+
+    /** BATTLE_MEDAL_REFRESH — Client: if("battleMedalRefresh" == n) */
+    BATTLE_MEDAL_REFRESH: 'battleMedalRefresh',
+
+    /** BATTLE_MEDAL_TASK_CHANGE — Client: if("battleMedalTaskChange" == n) */
+    BATTLE_MEDAL_TASK_CHANGE: 'battleMedalTaskChange',
+
+    // =============================================
+    // ITEM
+    // =============================================
+
+    /** ITEM_CHANGE — Client: if("itemChange" == n) */
+    ITEM_CHANGE: 'itemChange',
+
+    // =============================================
+    // TEAM DUNGEON
+    // =============================================
+
+    /** JOIN_TEAM_SUCCESS — Client: if("joinTeamSuccess" == n) */
+    JOIN_TEAM_SUCCESS: 'joinTeamSuccess',
+
+    /** TEAM_DUNGEON_FINISH — Client: if("teamDungeonFinish" == n) */
+    TEAM_DUNGEON_FINISH: 'teamDungeonFinish',
+
+    /** TEAM_DUNGEON_TASK_CHANGE — Client: if("teamDungeonTaskChange" == n) */
+    TEAM_DUNGEON_TASK_CHANGE: 'teamDungeonTaskChange',
+
+    /** TEAM_DUNGEON_EXPIRE — Client: if("teamDungeonExpire" == n) */
+    TEAM_DUNGEON_EXPIRE: 'teamDungeonExpire',
+
+    // =============================================
+    // TEAM DUNGEON (additional — from client notifyData)
+    // =============================================
+
+    /** TEAM_DUNGEON_BROADCAST — Client: if("teamDungeonBroadcast" == n)
+     *  Sends kill broadcast messages for team dungeon runs */
+    TEAM_DUNGEON_BROADCAST: 'teamDungeonBroadcast',
+
+    /** TEAM_DUNGEON_HIDE_CHANGE — Client: if("teamDungeonHideChange" == n)
+     *  Toggles dungeon visibility (e.g., hide from list) */
+    TEAM_DUNGEON_HIDE_CHANGE: 'teamDungeonHideChange',
+
+    /** TEAM_DUNGEON_CLOSE_TIME_CHANGE — Client: if("teamDungeonCloseTimeChange" == n)
+     *  Updates the countdown timer for dungeon close */
+    TEAM_DUNGEON_CLOSE_TIME_CHANGE: 'teamDungeonCloseTimeChange',
+
+    // =============================================
+    // BALL WAR (additional)
+    // =============================================
+
+    /** BALL_WAR_BROADCAST — Client: if("ballWarBroadcast" == n)
+     *  Broadcasts messages during Dragon Ball War event */
+    BALL_WAR_BROADCAST: 'ballWarBroadcast',
+
+    // =============================================
+    // FRIEND / MAIL
+    // =============================================
+
+    /** FG_ADD_MSG — Client: if("FGAddMsg" == n)
+     *  New friend mail message received */
+    FG_ADD_MSG: 'FGAddMsg',
+
+    /** FG_NEW_APPLY — Client: if("FGNewApply" == n)
+     *  New friend request/application received */
+    FG_NEW_APPLY: 'FGNewApply',
+
+    /** FG_ADD_CHAT_MSG — Client: if("FGAddChatMsg" == n)
+     *  Friend chat message or guild invite notification */
+    FG_ADD_CHAT_MSG: 'FGAddChatMsg',
+
+    // =============================================
+    // QUESTIONNAIRE
+    // =============================================
+
+    /** ADD_QUESTIONNAIRE — Client: if("addQuestionnaire" == n)
+     *  Server pushes a questionnaire/survey prompt */
+    ADD_QUESTIONNAIRE: 'addQuestionnaire',
+
+    // =============================================
+    // TOP BATTLE (additional)
+    // =============================================
+
+    /** TOP_BATTLE_BE_ATTACKED — Client: if("topBattleBeAttack" == n)
+     *  Player was attacked in Top Battle (defence triggered) */
+    TOP_BATTLE_BE_ATTACKED: 'topBattleBeAttack',
+
+    /** TOP_BATTLE_STAGE_CHANGE — Client: if("topBattleStageChange" == n)
+     *  Top Battle tournament stage changed (e.g., 64->16->4->final) */
+    TOP_BATTLE_STAGE_CHANGE: 'topBattleStageChange',
+
+    // =============================================
+    // SYSTEM / ADMIN
+    // =============================================
+
+    /** UPDATE_FORBIDDEN_CHAT — Client: if("updateForbiddenChat" == n)
+     *  User chat restriction status updated (muted/unmuted) */
+    UPDATE_FORBIDDEN_CHAT: 'updateForbiddenChat',
+
+    /** TIME_TRIAL_RESET — Client: if("timeTrialReset" == n)
+     *  Space/Time Trial timer reset (new challenge available) */
+    TIME_TRIAL_RESET: 'timeTrialReset',
+
+    /** RESONANCE_UNLOCK_SPECIAL — Client: if("resonanceUnlockSpecial" == e.action)
+     *  Hero quality resonance special unlock triggered */
+    RESONANCE_UNLOCK_SPECIAL: 'resonanceUnlockSpecial',
+
+    // =============================================
+    // MAINTENANCE (server-initiated, not in client notifyData but useful)
+    // =============================================
+
+    /** MAINTENANCE — Sent during server shutdown warning */
     MAINTENANCE: 'maintenance',
-
-    /** Snake game special event */
-    SNAKE_EVENT: 'snakeEvent',
-
-    /** Ball War event */
-    BALL_WAR_EVENT: 'ballWarEvent',
 };
 
 module.exports = NOTIFY_ACTION;

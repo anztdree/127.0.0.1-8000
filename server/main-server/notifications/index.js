@@ -46,21 +46,35 @@ var NOTIFY_ACTION = require('./actionTypes');
  * The response format uses ret="SUCCESS" (string) which is the
  * client's push detection mechanism.
  *
+ * CRITICAL FIX #1: Client reads action from INSIDE the parsed data payload.
+ * Client code (line 77182-77188):
+ *   var n = t.data;                          // data is JSON string
+ *   t.compress && (n = LZString.decompressFromUTF16(n));
+ *   var o = JSON.parse(n);                   // o = parsed data object
+ *   if("Kickout" == o.action) { ... }       // action read from o (inside data)
+ *
+ * So the action MUST be inside dataObj, NOT at the top-level of the response.
+ *
  * @param {object} socket - Socket.IO socket instance (must be connected)
- * @param {string} action - Notify action type from actionTypes.js (e.g. 'kickout')
+ * @param {string} action - Notify action type from actionTypes.js (e.g. 'Kickout')
  * @param {object} dataObj - Notification payload object (will be JSON.stringify'd)
  * @returns {boolean} true if sent successfully, false if socket not connected
  *
  * @example
- *  Notifications.sendNotify(socket, 'kickout', { reason: 'duplicate_login' });
+ *  Notifications.sendNotify(socket, 'Kickout', { reason: 'duplicate_login' });
  */
 function sendNotify(socket, action, dataObj) {
     if (!socket || !socket.connected) {
         return false;
     }
 
-    var pushData = ResponseHelper.push(dataObj);
-    pushData.action = action;
+    // FIX #1: Action must be INSIDE dataObj, not at top-level of response.
+    // Client does: o = JSON.parse(t.data); o.action
+    // So we merge action into the payload that becomes data string.
+    var payload = dataObj || {};
+    payload.action = action;
+
+    var pushData = ResponseHelper.push(payload);
 
     socket.emit('Notify', pushData);
     return true;
@@ -124,17 +138,20 @@ function broadcastNotify(connectedClients, action, dataObj) {
 /**
  * Kick a user with a notification message.
  *
- * Sends a "kicked" event (used by duplicate login detection in index.js)
- * followed by a "Notify" event with action="kickout" so the client
+ * Sends a "Notify" event with action="Kickout" so the client
  * shows the proper "Account logged in elsewhere" dialog.
  *
- * Client handler for "kicked" event (line ~88750):
- *   socket.on("kicked", function(msg) {
- *       ErrorHandler.ShowErrorTips(57003)  // USER_NOT_REGIST error
- *   })
+ * Client handler (line 77186):
+ *   if("Kickout" == o.action) {
+ *       e.mainClient.destroy(), e.chatClient.destroy(),
+ *       ts.runScene("Login"),
+ *       ts.normalErrorMsg(...)  // shows dialog
+ *       return
+ *   }
  *
- * Client handler for Notify kickout:
- *   case "kickout": shows forced disconnect dialog
+ * FIX #3: Removed socket.emit('kicked', reason) because the client
+ * has NO listener for "kicked" event. It was dead code.
+ * The client handles kickout ENTIRELY through the Notify mechanism.
  *
  * @param {object} socket - Socket to kick
  * @param {string} [reason='Logged in from another device'] - Kick reason
@@ -146,14 +163,13 @@ function kickUser(socket, reason) {
 
     reason = reason || 'Logged in from another device';
 
-    // First send the Notify with kickout action
+    // FIX #3: Only use Notify with Kickout action (client handles everything here)
+    // Client: if("Kickout" == o.action) { destroy sockets, go to Login scene }
     sendNotify(socket, NOTIFY_ACTION.KICKOUT, { reason: reason });
 
-    // Then emit the "kicked" event that triggers error dialog
-    // Small delay to ensure Notify arrives first
+    // Small delay to ensure Notify arrives before disconnect
     setTimeout(function () {
         if (socket.connected) {
-            socket.emit('kicked', reason);
             socket.disconnect(true);
         }
     }, 100);

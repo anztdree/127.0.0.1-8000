@@ -40,7 +40,9 @@ const path = require('path');
 function loginAnnounce(callback) {
     if (!ANNOUNCE.enabled) {
         info('loginAnnounce', 'Announcements disabled, returning empty');
-        if (callback) callback(success([]));
+        // CRITICAL: Client reads t.data from parsed response (L88778: r = t.data)
+        // Response data MUST be { data: [] }, NOT [] directly
+        if (callback) callback(success({ data: [] }));
         return;
     }
 
@@ -50,6 +52,9 @@ function loginAnnounce(callback) {
         const noticeData = require(noticePath);
 
         // Transform to client format
+        // Client expects each notice: { text: {lang: string}, title: {lang: string}, version, orderNo, alwaysPopup }
+        // Client reads: t.data[i].text[n.language], t.data[i].title[n.language], t.data[i].version, t.data[i].orderNo, t.data[i].alwaysPopup
+        // Source: main.min.js L88778-88790
         const notices = Object.values(noticeData).map(entry => ({
             text: { en: entry.content || '', cn: entry.content || '' },
             title: { en: entry.name || '', cn: entry.name || '' },
@@ -59,10 +64,13 @@ function loginAnnounce(callback) {
         }));
 
         info('loginAnnounce', `Returning ${notices.length} announcements`);
-        if (callback) callback(success(notices));
+        // CRITICAL FIX: Wrap in { data: [...] } so client can read t.data (L88778)
+        // Before fix: success(notices) → parsed = [...] → t.data = undefined → announcements NEVER show!
+        // After fix:  success({ data: notices }) → parsed = {data:[...]} → t.data = [...] → works!
+        if (callback) callback(success({ data: notices }));
     } catch (err) {
         warn('loginAnnounce', `Failed to load notices: ${err.message}, returning empty`);
-        if (callback) callback(success([]));
+        if (callback) callback(success({ data: [] }));
     }
 }
 

@@ -120,8 +120,8 @@ function createTeamManager() {
          * @param {number} dungeonId
          * @returns {object} Created team
          */
-        createTeam: function(userId, socket, dungeonId) {
-            var teamId = this.generateTeamId();
+        createTeam: function(userId, socket, dungeonId, explicitTeamId) {
+            var teamId = explicitTeamId || this.generateTeamId();
             var team = {
                 teamId: teamId,
                 dungeonId: dungeonId,
@@ -381,15 +381,46 @@ function createTeamManager() {
             var team = teams[teamId];
             if (!team) return null;
 
+            // Build users object keyed by userId
+            // Client expects: i.users[o.userId] = o  (main.min.js L145136)
+            // Each entry must have: userId, pos, type, isRobot, joinTime
+            // Source: L144855 e.users[userId].joinTime, L144859 r.type
+            var users = {};
+            for (var i = 0; i < team.members.length; i++) {
+                var m = team.members[i];
+                users[m.userId] = {
+                    userId: m.userId,
+                    pos: m.pos,
+                    type: m.isRobot ? 1 : 0,  // 0 = player, 1 = robot (L144859: r.type)
+                    isRobot: m.isRobot,
+                    joinTime: m.joinedAt,       // L144855: e.users[userId].joinTime
+                };
+            }
+
+            // Client expects these fields (main.min.js L144843, L147665-147671):
+            //   o._teamInfo.captain    → owner userId
+            //   o._teamInfo.users       → {userId: {userId, pos, type, isRobot, joinTime}, ...}
+            //   o._teamInfo.memberCount → number
+            //   o._teamInfo.id          → teamId string
+            //   o._teamInfo.dungeonId   → dungeon type id
+            //   o._teamInfo.closeTime   → team expiry timestamp (L147671)
+            //   o._teamInfo.displayId   → short team display ID (L147671)
+            //   o._teamInfo.autoJoinCondition → condition object (L147671)
+            var closeTime = team.createdAt + LIMITS.ROOM_TIMEOUT_MS;
+            // displayId: extract numeric portion from teamId (e.g. team_1234_1 → 1234)
+            var displayId = team.teamId.replace(/[^0-9]/g, '').substring(0, 8);
+
             return {
-                teamId: team.teamId,
+                id: team.teamId,
+                captain: team.owner,
+                users: users,
+                memberCount: team.members.length,
                 dungeonId: team.dungeonId,
-                owner: team.owner,
-                membersCount: team.members.length,
-                maxMembers: LIMITS.MAX_TEAM_MEMBERS,
-                state: team.state,
+                closeTime: closeTime,
+                displayId: displayId,
                 autoJoin: team.autoJoin,
-                condition: team.condition,
+                autoJoinCondition: team.condition,
+                state: team.state,
                 applyCount: team.applyList.length,
                 createdAt: team.createdAt,
                 lastActivityAt: team.lastActivityAt,
@@ -399,22 +430,36 @@ function createTeamManager() {
         /**
          * Get members info for client (without socket refs).
          *
+         * Returns OBJECT keyed by userId, NOT array.
+         * Client L144859: i.deserialize(t[a]) where t = _usersInfo, a = userId
+         * So _usersInfo must be {userId: {serialized_user_data}, ...}
+         *
+         * For non-robot members, the value is a serialized ZkTeamUser-like object
+         * that the client passes to i.deserialize(). Must include _userId, _nickName, _headImage.
+         * For robot members, the client uses todayRobots[userId] instead (L144859).
+         *
          * @param {string} teamId
-         * @returns {Array<object>}
+         * @returns {Object.<string, object>} userId → user info object
          */
         getMembersInfo: function(teamId) {
             var team = teams[teamId];
-            if (!team) return [];
+            if (!team) return {};
 
-            return team.members.map(function(m) {
-                return {
-                    userId: m.userId,
-                    pos: m.pos,
-                    role: m.role,
-                    isRobot: m.isRobot,
-                    joinedAt: m.joinedAt,
-                };
-            });
+            var result = {};
+            for (var i = 0; i < team.members.length; i++) {
+                var m = team.members[i];
+                // For non-robot members, provide basic user info for deserialize()
+                // For robot members, client uses todayRobots from queryRobot response
+                if (!m.isRobot) {
+                    result[m.userId] = {
+                        _userId: m.userId,
+                        _nickName: '',
+                        _headImage: '',
+                        _isRobot: 0,
+                    };
+                }
+            }
+            return result;
         },
 
         /**

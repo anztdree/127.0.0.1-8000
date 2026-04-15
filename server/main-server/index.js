@@ -11,6 +11,10 @@
  *    2. Routing 60+ type handlers (hero, arena, guild, dll)
  *    3. Connection tracking per userId
  *    4. Health check endpoint
+ *    5. Push notification system (Notify event)
+ *    6. Scheduler system (daily reset, recovery, activity)
+ *    7. Room management (team dungeon)
+ *    8. Activity manager (open server days)
  *
  *  Perbedaan dengan Login Server:
  *    - Wajib TEA verification sebelum request diproses
@@ -76,6 +80,14 @@ var GameData = require('../shared/gameData/loader');
 // =============================================
 var ResponseHelper = require('../shared/responseHelper');
 var TEA = require('../shared/tea');
+
+// =============================================
+// 4b. LOAD INTERNAL MODULES
+// =============================================
+var Notifications = require('./notifications');
+var Scheduler = require('./scheduler');
+var ActivityManager = require('./activity');
+var Rooms = require('./rooms');
 
 // =============================================
 // 5. LOAD ALL HANDLERS DYNAMICALLY
@@ -174,6 +186,8 @@ var server = http.createServer(function (req, res) {
             totalConnections: totalConnections,
             activeConnections: activeConnections,
             handlersLoaded: Object.keys(handlers).length,
+            roomsActive: Rooms.getRoomCount(),
+            openServerDays: ActivityManager.getOpenServerDays(),
             timestamp: new Date().toISOString()
         }));
         return;
@@ -418,14 +432,16 @@ io.on('connection', function (socket) {
         // Track user connection
         if (parsed.userId) {
             // Disconnect previous connection for same userId (single-session enforcement)
+            // Use Notifications.kickUser() for proper Notify+kicked+disconnect sequence
             if (connectedClients[parsed.userId] &&
                 connectedClients[parsed.userId] !== socket &&
                 connectedClients[parsed.userId].connected) {
                 console.log('[Connection] Duplicate login detected for userId=' +
-                    parsed.userId + ' — disconnecting old session');
-                connectedClients[parsed.userId].emit('kicked',
-                    'Logged in from another device');
-                connectedClients[parsed.userId].disconnect(true);
+                    parsed.userId + ' — kicking old session');
+                Notifications.kickUser(
+                    connectedClients[parsed.userId],
+                    'Logged in from another device'
+                );
             }
 
             connectedClients[parsed.userId] = socket;
@@ -461,11 +477,29 @@ io.on('connection', function (socket) {
         // Clean up verification timer
         clearTimeout(verifyTimer);
 
-        // Remove from connected clients
+        // Clean up user state on disconnect
         if (socket._userId) {
             // Only delete if this socket is still the active one
             if (connectedClients[socket._userId] === socket) {
                 delete connectedClients[socket._userId];
+            }
+
+            // Invalidate user data cache (data may change while offline)
+            try {
+                var UserDataService = require('./services/userDataService');
+                UserDataService.invalidateCache(socket._userId);
+            } catch (e) {
+                // Service may not be available during early disconnect
+            }
+
+            // Clean up user from any rooms
+            try {
+                var userRoomId = Rooms.getUserRoomId(socket._userId);
+                if (userRoomId) {
+                    Rooms.leaveRoom(userRoomId, socket._userId);
+                }
+            } catch (e) {
+                // Rooms module may not be loaded
             }
         }
 
@@ -504,7 +538,22 @@ function gracefulShutdown(signal) {
     console.log('');
     console.log('[Shutdown] Received ' + signal + '. Shutting down gracefully...');
 
-    // 1. Close all client connections
+    // 1. Send maintenance warning to all connected users
+    try {
+        var warned = Notifications.sendMaintenanceWarning(connectedClients, 1);
+        console.log('[Shutdown] Maintenance warning sent to ' + warned + ' user(s)');
+    } catch (e) {
+        // Ignore notification errors during shutdown
+    }
+
+    // 2. Shut down scheduler systems
+    try {
+        Scheduler.shutdown();
+    } catch (e) {
+        // Ignore
+    }
+
+    // 3. Close all client connections
     var keys = Object.keys(connectedClients);
     for (var i = 0; i < keys.length; i++) {
         try {
@@ -515,11 +564,11 @@ function gracefulShutdown(signal) {
     }
     console.log('[Shutdown] Disconnected ' + keys.length + ' client(s)');
 
-    // 2. Close Socket.IO, then DB, then HTTP server
+    // 4. Close Socket.IO, then DB, then HTTP server
     io.close(function () {
         console.log('[Shutdown] Socket.IO closed');
 
-        // 3. Close database pool
+        // 5. Close database pool
         DB.closePool()
             .then(function () {
                 console.log('[Shutdown] Database pool closed');
@@ -590,8 +639,20 @@ async function startServer() {
         console.error('[Startup] Server will start but game data will not be available.');
     }
 
+    // Step 2b: Initialize activity manager
+    console.log('[Startup] Initializing activity manager...');
+    ActivityManager.init();
+
     // Step 3: Start HTTP server
     server.listen(SERVER_PORT, SERVER_HOST, function () {
+        // Step 3b: Initialize scheduler systems (after server is listening)
+        console.log('[Startup] Initializing scheduler systems...');
+        try {
+            Scheduler.initAll(connectedClients);
+        } catch (err) {
+            console.error('[Startup] WARNING: Scheduler init failed: ' + err.message);
+        }
+
         console.log('');
         console.log('================================================');
         console.log('  Main Server is RUNNING!');
@@ -622,6 +683,10 @@ async function startServer() {
         }
 
         console.log('    Handlers:      ' + Object.keys(handlers).length + ' loaded');
+        console.log('    Notifications: ' + Object.keys(Notifications.NOTIFY_ACTION).length + ' action types');
+        console.log('    Scheduler:     ACTIVE (daily reset, recovery, activity)');
+        console.log('    Rooms:         Team dungeon room manager ready');
+        console.log('    Activity:      Open day ' + ActivityManager.getOpenServerDays());
         console.log('================================================');
         console.log('');
         console.log('  Waiting for client connections...');

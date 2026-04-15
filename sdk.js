@@ -1583,13 +1583,13 @@
         sdkLog('info', 'Auth', 'Logging out user: ' + _state.userId);
 
         // Send logout to server
-        if (_state.userId && _state.sessionId) {
+        if (_state.userId && _state.loginToken) {
             sendHttpRequest(
                 'POST',
                 SDK_CONFIG.API.AUTH_LOGOUT,
                 {
                     userId: _state.userId,
-                    sessionId: _state.sessionId,
+                    loginToken: _state.loginToken,
                     timestamp: formatDate()
                 },
                 function () {

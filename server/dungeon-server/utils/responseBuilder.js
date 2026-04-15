@@ -54,10 +54,13 @@ function broadcastToTeam(members, dataObj) {
  * @returns {object} HTTP response object
  */
 function buildHttpResponse(dataObj) {
+    var now = Date.now();
     return {
         ret: 0,
         data: JSON.stringify(dataObj || {}),
-        serverTime: Date.now(),
+        compress: false,
+        serverTime: now,
+        server0Time: now,
     };
 }
 
@@ -69,10 +72,13 @@ function buildHttpResponse(dataObj) {
  * @returns {object}
  */
 function buildHttpError(code, msg) {
+    var now = Date.now();
     return {
         ret: code,
         data: msg || '',
-        serverTime: Date.now(),
+        compress: false,
+        serverTime: now,
+        server0Time: now,
     };
 }
 

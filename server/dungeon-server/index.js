@@ -35,7 +35,6 @@
 'use strict';
 
 var http = require('http');
-var url = require('url');
 
 // =============================================
 // 1. CONFIGURATION
@@ -54,6 +53,7 @@ var TEA_KEY = config.config.security.teaKey || 'verification';
 
 var RH = require('../shared/responseHelper');
 var DB = require('../database/connection');
+var GameData = require('../shared/gameData/loader');
 var logger = require('../shared/utils/logger');
 
 // =============================================
@@ -131,43 +131,77 @@ var server = http.createServer(function(req, res) {
     }
 
     // HTTP query endpoints (teamServerHttpUrl)
-    // Client uses HTTP GET with query params: /?type=teamDungeonTeam&action=xxx
-    if (req.method === 'GET' && req.url.indexOf('/?') === 0) {
-        var parsedUrl = url.parse(req.url, true);
-        var action = parsedUrl.query.action;
+    // Client sends POST with form-urlencoded body: data=<JSON>
+    // Source: main.min.js L76888-76913
+    //   i.open(e, egret.HttpMethod.POST);
+    //   i.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+    //   i.send("data=" + JSON.stringify(t));
+    if (req.method === 'POST') {
+        var body = '';
+        req.on('data', function(chunk) {
+            body += chunk.toString();
+            if (body.length > 1e6) {
+                req.connection.destroy();
+            }
+        });
+        req.on('end', function() {
+            // Parse form-urlencoded body: data=<JSON_string>
+            var payload = {};
+            try {
+                var formParams = {};
+                var pairs = body.split('&');
+                for (var i = 0; i < pairs.length; i++) {
+                    var pair = pairs[i].split('=');
+                    if (pair.length >= 2) {
+                        formParams[decodeURIComponent(pair[0])] =
+                            decodeURIComponent(pair.slice(1).join('='));
+                    }
+                }
+                payload = JSON.parse(formParams.data || '{}');
+            } catch (err) {
+                logger.warn('DUNGEON', 'HTTP: Failed to parse request body');
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ret: 1, data: 'Invalid request body' }));
+                return;
+            }
 
-        if (!action) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ret: 1, data: 'Missing action' }));
-            return;
-        }
+            var action = payload.action;
+            if (!action) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ret: 1, data: 'Missing action' }));
+                return;
+            }
 
-        logger.info('DUNGEON', 'HTTP: action=' + action);
+            logger.info('DUNGEON', 'HTTP POST: action=' + action);
 
-        var result;
-        switch (action) {
-            case 'queryTodayMap':
-                result = httpQueryTodayMap(deps, parsedUrl.query);
-                break;
-            case 'queryRobot':
-                result = httpQueryRobot(deps, parsedUrl.query);
-                break;
-            case 'queryHistoryMap':
-                result = httpQueryHistoryMap(deps, parsedUrl.query);
-                break;
-            case 'queryTeamRecord':
-                result = httpQueryTeamRecord(deps, parsedUrl.query);
-                break;
-            case 'queryBattleRecord':
-                result = httpQueryBattleRecord(deps, parsedUrl.query);
-                break;
-            default:
-                result = { ret: 5, data: 'Unknown action: ' + action, serverTime: Date.now() };
-                break;
-        }
+            var result;
+            switch (action) {
+                case 'queryTodayMap':
+                    result = httpQueryTodayMap(deps, payload);
+                    break;
+                case 'queryRobot':
+                    result = httpQueryRobot(deps, payload);
+                    break;
+                case 'queryHistoryMap':
+                    result = httpQueryHistoryMap(deps, payload);
+                    break;
+                case 'queryTeamRecord':
+                    result = httpQueryTeamRecord(deps, payload);
+                    break;
+                case 'queryBattleRecord':
+                    result = httpQueryBattleRecord(deps, payload);
+                    break;
+                default:
+                    result = { ret: 5, data: 'Unknown action: ' + action, serverTime: Date.now() };
+                    break;
+            }
 
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify(result));
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+            });
+            res.end(JSON.stringify(result));
+        });
         return;
     }
 
@@ -366,7 +400,9 @@ async function startServer() {
         process.exit(1);
     }
 
-    // Load game data
+    // Load game data (required for queryTodayMap, queryRobot, queryHistoryMap)
+    // teamDungeon.json, teamDungeonRobot.json, teamDungeon101.json, etc.
+    GameData.load();
     robotService.load();
 
     server.listen(SERVER_PORT, SERVER_HOST, function() {

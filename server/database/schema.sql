@@ -1,11 +1,24 @@
 -- ============================================
--- Super Warrior Z - Database Schema
--- 100% derived from client code analysis
+-- Super Warrior Z — Database Schema
+--
+-- REFERENCE FILE
+-- Tables are created automatically by database/connection.js init().
+-- This file can also be run manually for fresh setup:
+--   mariadb -u admin -p < schema.sql
+--
+-- Schema version: 1 (tracked in _schema_meta table)
 --
 -- DESIGN: user_data uses a single game_data JSON column
 -- to store ALL 88+ fields from UserDataParser.saveUserData().
 -- This eliminates column mismatch issues and requires
 -- zero schema migration when adding new game fields.
+--
+-- Tables:
+--   1. users          — Account data (login, registration)
+--   2. user_data      — Per-server game state (JSON blob)
+--   3. user_online    — Online user tracking (duplicate login detection)
+--   4. login_tokens   — Session token storage (login -> enterGame flow)
+--   5. _schema_meta   — Schema version tracking (server-side)
 --
 -- Sources:
 --   UserDataParser.saveUserData() (line 77641-77724)
@@ -19,8 +32,9 @@ CREATE DATABASE IF NOT EXISTS `super_warrior_z`
 
 USE `super_warrior_z`;
 
+
 -- ============================================
--- users table
+-- 1. users table
 --
 -- Source: UserDataParser e.user (line 77670-77673):
 --   { _id, _pwd, _nickName, _headImage, _lastLoginTime,
@@ -42,8 +56,8 @@ USE `super_warrior_z`;
 
 CREATE TABLE IF NOT EXISTS `users` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `user_id` VARCHAR(64) NOT NULL UNIQUE COMMENT 'userId - unique login identifier',
-    `password` VARCHAR(128) NOT NULL DEFAULT 'game_origin' COMMENT 'PLAINTEXT password',
+    `user_id` VARCHAR(64) NOT NULL UNIQUE COMMENT 'userId — unique login identifier',
+    `password` VARCHAR(128) NOT NULL DEFAULT 'game_origin' COMMENT 'PLAINTEXT password — client sends raw, no hash',
     `nick_name` VARCHAR(64) NOT NULL DEFAULT '' COMMENT '_nickName from UserDataParser',
     `head_image` VARCHAR(256) NOT NULL DEFAULT '' COMMENT '_headImage from UserDataParser',
     `from_channel` VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'fromChannel from loginGame request',
@@ -54,18 +68,19 @@ CREATE TABLE IF NOT EXISTS `users` (
     `last_login_time` BIGINT NOT NULL DEFAULT 0 COMMENT '_lastLoginTime from UserDataParser',
     `create_time` BIGINT NOT NULL DEFAULT 0 COMMENT '_createTime from UserDataParser',
     `bulletin_versions` TEXT DEFAULT NULL COMMENT '_bulletinVersions from UserDataParser',
-    `is_new` TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'newUser flag (line 77433)',
+    `is_new` TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'newUser flag — loginSuccessCallBack checks e.newUser (line 77433)',
     INDEX `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+
 -- ============================================
--- user_data table
+-- 2. user_data table
 --
 -- Stores per-server user game state as a single JSON blob.
 -- ALL 88+ fields from UserDataParser.saveUserData() (line 77641-77724)
 -- are stored in the game_data JSON column.
 --
--- Why JSON column:
+-- Why JSON column instead of separate columns:
 --   - Client has 88+ fields, many are complex nested objects
 --   - Adding new fields requires NO schema migration
 --   - Eliminates column mismatch bugs entirely
@@ -77,15 +92,16 @@ CREATE TABLE IF NOT EXISTS `user_data` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `user_id` VARCHAR(64) NOT NULL COMMENT 'userId from enterGame request',
     `server_id` INT NOT NULL DEFAULT 1 COMMENT 'serverId from enterGame request',
-    `game_data` JSON DEFAULT NULL COMMENT 'ALL 88+ fields from UserDataParser.saveUserData() as JSON',
+    `game_data` JSON DEFAULT NULL COMMENT 'ALL 88+ fields from UserDataParser.saveUserData() as JSON blob',
     `last_login_time` BIGINT NOT NULL DEFAULT 0 COMMENT '_lastLoginTime',
     `update_time` BIGINT NOT NULL DEFAULT 0 COMMENT 'Last data update timestamp',
     UNIQUE KEY `uk_user_server` (`user_id`, `server_id`),
     INDEX `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+
 -- ============================================
--- user_online table
+-- 3. user_online table
 --
 -- Tracks online users per server.
 -- Used to detect duplicate login (error code 12).
@@ -101,13 +117,16 @@ CREATE TABLE IF NOT EXISTS `user_online` (
     UNIQUE KEY `uk_user_server` (`user_id`, `server_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+
 -- ============================================
--- login_tokens table
+-- 4. login_tokens table
 --
 -- Stores active login tokens for session validation.
 -- loginToken is generated on loginGame (login server)
 -- and validated on enterGame (main server).
+--
 -- Client: ts.loginInfo.userInfo.loginToken (line 88719)
+-- enterGame request: { type:"user", action:"enterGame", loginToken, userId, serverId, ... }
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS `login_tokens` (
@@ -121,3 +140,27 @@ CREATE TABLE IF NOT EXISTS `login_tokens` (
     INDEX `idx_token` (`token`),
     INDEX `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ============================================
+-- 5. _schema_meta table (server-side)
+--
+-- Tracks schema version for migration awareness.
+-- Not derived from client code — server-side enhancement.
+-- Used by connection.js init() to record the current schema version.
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS `_schema_meta` (
+    `key_name` VARCHAR(64) NOT NULL PRIMARY KEY,
+    `key_value` VARCHAR(256) NOT NULL,
+    `updated_at` BIGINT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ============================================
+-- Initialize schema metadata (idempotent)
+-- ============================================
+
+INSERT INTO `_schema_meta` (`key_name`, `key_value`, `updated_at`)
+VALUES ('schema_version', '1', UNIX_TIMESTAMP() * 1000)
+ON DUPLICATE KEY UPDATE `key_value` = '1', `updated_at` = UNIX_TIMESTAMP() * 1000;

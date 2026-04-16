@@ -158,12 +158,10 @@ function generateNewUserData(userId, nickName, serverId) {
             _gold: GAME_CONSTANTS.startGold,
         },
 
-        // newUser flag (line 77433): loginSuccessCallBack checks e.newUser
-        newUser: true,
-
         // broadcastRecord (line 77449): ts.chatJoinRecord({_record: t.broadcastRecord})
-        // Used unconditionally in callback
-        broadcastRecord: {},
+        // Client iterates with for(var o in t) — must be array (chat message list)
+        // newUser is NOT here — it's a response-time flag set by enterGame, not persistent data
+        broadcastRecord: [],
 
         // user (line 77670-77673): setUserInfo(e)
         // Reads e.user._id, e.user._nickName, etc. unconditionally

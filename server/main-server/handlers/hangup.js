@@ -62,35 +62,121 @@ function generateBattleId() {
 }
 
 /**
- * Parse comma-separated enemy data from lesson config into team array.
+ * Build enemy team from lesson config — returns client-expected _rightTeam format.
  *
  * enemyList format: ",,,55206," → 5 comma-separated slots (positions 0-4)
  * Empty string = no enemy in that slot.
  *
- * @param {string} enemyList - Comma-separated hero display IDs
- * @param {string} enemyLevel - Comma-separated levels
- * @param {string} monsterType - Comma-separated monster types
- * @returns {Array} Array of enemy objects for non-empty slots
+ * Returns: Object keyed by position string {"0": heroObj, "1": heroObj, ...}
+ * Each hero has: _heroDisplayId, _heroLevel, _heroStar, _skinId,
+ *   _weaponHaloId, _weaponHaloLevel, _skills, _attrs._items
  */
-function parseEnemyTeam(enemyList, enemyLevel, monsterType) {
-    var enemies = [];
+function buildRightTeam(enemyList, enemyLevel) {
+    var rightTeam = {};
     var ids = (enemyList || '').split(',');
     var levels = (enemyLevel || '').split(',');
-    var types = (monsterType || '').split(',');
+
+    var heroConfigs = GameData.get('hero');
+    var levelAttrs = GameData.get('heroLevelAttr');
+    var skillConfigs = GameData.get('skill');
+    var typeParams = GameData.get('heroTypeParam');
+    var qualityParams = GameData.get('heroQualityParam');
+
+    // Skill type mapping: skill.json skillType → client _type
+    var skillTypeMap = {
+        'normal': 0,
+        'skill': 1,
+        'skillPassive': 2,
+        'super': 3,
+        'potential': 4
+    };
 
     for (var i = 0; i < 5; i++) {
         var displayId = (ids[i] || '').trim();
-        if (displayId !== '') {
-            enemies.push({
-                heroDisplayId: displayId,
-                level: parseInt(levels[i]) || 1,
-                position: i,
-                star: 0,
-                monsterType: (types[i] || '').trim()
-            });
+        if (displayId === '') continue;
+
+        var level = parseInt(levels[i]) || 1;
+        var heroConfig = heroConfigs && heroConfigs[String(displayId)];
+
+        if (!heroConfig) {
+            logger.warn('HANGUP', 'buildRightTeam: hero config not found for displayId=' + displayId);
+            continue;
         }
+
+        var heroType = heroConfig.type || 'skill';
+        var heroQuality = heroConfig.quality || 'white';
+
+        // Get type and quality multipliers
+        var tp = typeParams && typeParams[heroType] || { hpParam: 1, attackParam: 1, armorParam: 1, hpBais: 0, attackBais: 0, armorBais: 0 };
+        var qp = qualityParams && qualityParams[heroQuality] || { hpParam: 1, attackParam: 1, armorParam: 1 };
+
+        // Get base level attributes
+        var la = levelAttrs && levelAttrs[String(Math.min(level, 349))];
+        var baseHp = la ? Number(la.hp) : 1240;
+        var baseAttack = la ? Number(la.attack) : 125;
+        var baseArmor = la ? Number(la.armor) : 205;
+
+        // Calculate final attributes: (base * typeParam + typeBais) * qualityParam
+        var finalHp = Math.round((baseHp * Number(tp.hpParam) + Number(tp.hpBais || 0)) * Number(qp.hpParam));
+        var finalAttack = Math.round((baseAttack * Number(tp.attackParam) + Number(tp.attackBais || 0)) * Number(qp.attackParam));
+        var finalArmor = Math.round((baseArmor * Number(tp.armorParam) + Number(tp.armorBais || 0)) * Number(qp.armorParam));
+        var speed = Number(heroConfig.speed) || 360;
+        var energyMax = Number(heroConfig.energyMax) || 100;
+
+        // Build skills object from hero config
+        var skills = {};
+        var skillFields = [
+            { id: heroConfig.normal, level: 1 },
+            { id: heroConfig.skill, level: Number(heroConfig.skillLevel) || 1 },
+            { id: heroConfig.skillPassive1, level: Number(heroConfig.passiveLevel1) || 1 },
+            { id: heroConfig.skillPassive2, level: Number(heroConfig.passiveLevel2) || 1 },
+            { id: heroConfig.super, level: 1 },
+            { id: heroConfig.potential1, level: 1 },
+            { id: heroConfig.potential2, level: 1 }
+        ];
+
+        for (var s = 0; s < skillFields.length; s++) {
+            var sf = skillFields[s];
+            if (!sf.id || Number(sf.id) === 0) continue;
+
+            var sid = String(sf.id);
+            var skillConfig = skillConfigs && skillConfigs[sid];
+            var clientType = skillConfig && skillTypeMap[skillConfig.skillType];
+            if (clientType === undefined) clientType = 1; // default to proactive
+
+            skills[sid] = {
+                _type: clientType,
+                _id: Number(sf.id),
+                _level: sf.level
+            };
+        }
+
+        // Build attrs
+        var attrs = {
+            '0': { _id: 0, _num: finalHp },           // Health
+            '1': { _id: 1, _num: finalAttack },         // Attack
+            '2': { _id: 2, _num: finalArmor },          // Armor
+            '3': { _id: 3, _num: speed },               // Speed
+            '22': { _id: 22, _num: finalHp },           // FullHealth = Health
+            '41': { _id: 41, _num: energyMax },          // ENERGYMAX
+            '104': { _id: 104, _num: baseAttack },       // HeroBasicAttack
+            '105': { _id: 105, _num: baseHp },           // HeroBasicHP
+            '106': { _id: 106, _num: baseArmor }         // heroBasicArmor
+        };
+
+        rightTeam[String(i)] = {
+            _heroDisplayId: Number(displayId),
+            _heroLevel: level,
+            _heroStar: 0,
+            _skinId: 0,
+            _weaponHaloId: 0,
+            _weaponHaloLevel: 0,
+            _skills: skills,
+            _attrs: { _items: attrs }
+        };
     }
-    return enemies;
+
+    return rightTeam;
 }
 
 /**
@@ -287,36 +373,27 @@ function buildChapterRewardItems(chapterConfig) {
 /**
  * startGeneral — Start a lesson/stage battle.
  *
- * CLIENT REQUEST:
- * {
- *   type: "hangup",
- *   action: "startGeneral",
- *   userId: string,
- *   version: "1.0",
- *   team: [{heroId, position}, ...],
- *   super: [superSkillId, ...],
- *   battleField: number (BattleLogic.GameFieldType.LESSON)
- * }
+ * CLIENT REQUEST: { type, action, userId, version:"1.0", team, super, battleField }
  *
- * CLIENT RESPONSE FIELDS:
- *   r._battleId   → string battle ID (used in checkBattleResult)
- *   r._rightTeam  → enemy team data array [{heroDisplayId, level, position, star, monsterType}, ...]
- *   r._rightSuper → enemy super skills array (usually empty [])
+ * RESPONSE FIELDS (what client reads):
+ *   _battleId   → string battle ID (used in checkBattleResult)
+ *   _rightTeam  → object keyed by position {"0": heroObj, ...}
+ *   _rightSuper → enemy super skills array (empty for hangup)
+ *
+ * _rightTeam hero format:
+ *   _heroDisplayId, _heroLevel, _heroStar, _skinId,
+ *   _weaponHaloId, _weaponHaloLevel,
+ *   _skills: {skillId: {_type, _id, _level}, ...}
+ *   _attrs: {_items: {attrId: {_id, _num}, ...}}
  *
  * Does NOT save to DB — battle hasn't happened yet.
  */
 async function handleStartGeneral(socket, parsed, callback) {
     var userId = parsed.userId;
-    var team = parsed.team;
-    var superSkills = parsed.super;
-    var battleField = parsed.battleField;
 
-    logger.info('HANGUP', 'startGeneral: userId=' + (userId || '-') +
-        ', teamCount=' + (team ? team.length : 0) +
-        ', superCount=' + (superSkills ? superSkills.length : 0));
+    logger.info('HANGUP', 'startGeneral: userId=' + (userId || '-'));
 
     try {
-        // Load user data to get current lesson
         var gameData = await userDataService.loadUserData(userId, 1);
         if (!gameData) {
             logger.error('HANGUP', 'startGeneral: user data not found for userId=' + userId);
@@ -325,7 +402,6 @@ async function handleStartGeneral(socket, parsed, callback) {
 
         var curLess = gameData.hangup._curLess || GAME_CONSTANTS.startLesson;
 
-        // Get lesson config
         var lessonConfigs = GameData.get('lesson');
         if (!lessonConfigs || !lessonConfigs[String(curLess)]) {
             logger.error('HANGUP', 'startGeneral: lesson config not found for lessonId=' + curLess);
@@ -334,22 +410,21 @@ async function handleStartGeneral(socket, parsed, callback) {
 
         var lessonConfig = lessonConfigs[String(curLess)];
 
-        // Build enemy team from lesson config
-        var enemyTeam = parseEnemyTeam(
+        // Build enemy team in client-expected _rightTeam format
+        var rightTeam = buildRightTeam(
             lessonConfig.enemyList || '',
-            lessonConfig.enemyLevel || '',
-            lessonConfig.monsterType || ''
+            lessonConfig.enemyLevel || ''
         );
 
-        // Generate unique battle ID
         var battleId = generateBattleId();
+        var enemyCount = Object.keys(rightTeam).length;
 
-        logger.info('HANGUP', 'startGeneral: built enemy team for lessonId=' + curLess +
-            ', enemies=' + enemyTeam.length + ', battleId=' + battleId);
+        logger.info('HANGUP', 'startGeneral: lessonId=' + curLess +
+            ', enemies=' + enemyCount + ', battleId=' + battleId);
 
         callback(RH.success({
             _battleId: battleId,
-            _rightTeam: enemyTeam,
+            _rightTeam: rightTeam,
             _rightSuper: []
         }));
 
@@ -362,55 +437,32 @@ async function handleStartGeneral(socket, parsed, callback) {
 /**
  * checkBattleResult — Submit and process battle result.
  *
- * CLIENT REQUEST (NORMAL):
- * {
- *   type: "hangup",
- *   action: "checkBattleResult",
- *   userId: string,
- *   battleId: string,
- *   version: "1.0",
- *   super: [superSkillId, ...],
- *   checkResult: number (0=WIN, non-zero=LOSE),
- *   battleField: number,
- *   runaway: boolean
- * }
+ * NORMAL REQUEST: { type, action, userId, battleId, version, super, checkResult, battleField, runaway }
+ * GUIDE REQUEST:  { type, action, userId, version, isGuide: true }  — NO checkResult, NO battleId
+ *   Guide battles are predetermined wins (tutorial cannot fail).
  *
- * CLIENT REQUEST (GUIDE/TUTORIAL — same + isGuide: true):
- * {
- *   ... same fields ...
- *   isGuide: true
- * }
+ * RESPONSE FIELDS (what client reads):
+ *   _battleResult          → 0=WIN, 1=LOSE
+ *   _curLess               → current lesson ID (advanced on WIN)
+ *   _maxPassLesson         → highest lesson cleared
+ *   _maxPassChapter        → highest chapter cleared (normal WIN only, guide ignores)
+ *   _changeInfo._items     → {itemId: {_id, _num}} battle award items (WIN only)
  *
- * CLIENT RESPONSE FIELDS:
- *   t._battleResult       → 0=WIN, 1=LOSE
- *   t._curLess            → new current lesson ID (if won, advance to nextID)
- *   t._maxPassLesson      → highest lesson cleared
- *   t._maxPassChapter     → highest chapter cleared
- *   t._haveGotChapterReward → {chapterId: true} track claimed chapter rewards
- *   t._changeInfo._items  → {itemId: {_id, _num}} battle award items
- *
- * WIN path: advance lesson, give awards, save to DB.
- * LOSE path: no progress, no rewards, no save.
- * Guide path: identical to WIN/LOSE processing.
+ * WIN:  advance lesson, give awards, save DB.
+ * LOSE: no progress, no rewards, no save.
+ * GUIDE: always WIN — same as WIN path.
  */
 async function handleCheckBattleResult(socket, parsed, callback) {
     var userId = parsed.userId;
-    var battleId = parsed.battleId;
-    var checkResult = parsed.checkResult;
-    var superSkills = parsed.super;
-    var runaway = parsed.runaway;
     var isGuide = parsed.isGuide;
 
-    var won = (checkResult === 0 || checkResult === '0');
+    // Guide/tutorial battles are predetermined wins — client sends isGuide:true WITHOUT checkResult
+    var won = isGuide ? true : (parsed.checkResult === 0 || parsed.checkResult === '0');
 
     logger.info('HANGUP', 'checkBattleResult: userId=' + (userId || '-') +
-        ', battleId=' + battleId +
-        ', won=' + won +
-        ', runaway=' + runaway +
-        ', isGuide=' + (isGuide ? 'true' : 'false'));
+        ', won=' + won + ', isGuide=' + (isGuide ? 'true' : 'false'));
 
     try {
-        // Load user data
         var gameData = await userDataService.loadUserData(userId, 1);
         if (!gameData) {
             logger.error('HANGUP', 'checkBattleResult: user data not found for userId=' + userId);
@@ -421,10 +473,9 @@ async function handleCheckBattleResult(socket, parsed, callback) {
         var curLess = hangup._curLess || GAME_CONSTANTS.startLesson;
         var maxPassLesson = hangup._maxPassLesson || GAME_CONSTANTS.startLesson;
         var maxPassChapter = hangup._maxPassChapter || GAME_CONSTANTS.startChapter;
-        var haveGotChapterReward = hangup._haveGotChapterReward || {};
 
         if (!won) {
-            // LOSE — no progress, no rewards
+            // LOSE — no progress, no rewards, no DB save
             logger.info('HANGUP', 'checkBattleResult: player lost, no progress for userId=' + userId);
 
             callback(RH.success({
@@ -432,10 +483,7 @@ async function handleCheckBattleResult(socket, parsed, callback) {
                 _curLess: curLess,
                 _maxPassLesson: maxPassLesson,
                 _maxPassChapter: maxPassChapter,
-                _haveGotChapterReward: haveGotChapterReward,
-                _changeInfo: {
-                    _items: {}
-                }
+                _changeInfo: { _items: {} }
             }));
             return;
         }
@@ -459,14 +507,8 @@ async function handleCheckBattleResult(socket, parsed, callback) {
 
         // Update hangup state
         var newCurLess = curLess;
-        var newMaxPassLesson = curLess;
+        var newMaxPassLesson = Math.max(curLess, maxPassLesson);
         var newMaxPassChapter = maxPassChapter;
-
-        if (curLess > maxPassLesson) {
-            newMaxPassLesson = curLess;
-        } else {
-            newMaxPassLesson = maxPassLesson;
-        }
 
         // Advance to next lesson if available
         if (lessonConfig.nextID) {
@@ -489,8 +531,8 @@ async function handleCheckBattleResult(socket, parsed, callback) {
         // Save to DB
         await userDataService.saveUserData(userId, gameData, 1);
 
-        logger.info('HANGUP', 'checkBattleResult: player won lesson=' + curLess +
-            ', advanced to lesson=' + newCurLess +
+        logger.info('HANGUP', 'checkBattleResult: won lesson=' + curLess +
+            ', next=' + newCurLess +
             ', maxPassLesson=' + newMaxPassLesson +
             ', maxPassChapter=' + newMaxPassChapter +
             ', isGuide=' + (isGuide ? 'true' : 'false'));
@@ -500,10 +542,7 @@ async function handleCheckBattleResult(socket, parsed, callback) {
             _curLess: newCurLess,
             _maxPassLesson: newMaxPassLesson,
             _maxPassChapter: newMaxPassChapter,
-            _haveGotChapterReward: haveGotChapterReward,
-            _changeInfo: {
-                _items: awardItems
-            }
+            _changeInfo: { _items: awardItems }
         }));
 
     } catch (err) {
@@ -515,20 +554,15 @@ async function handleCheckBattleResult(socket, parsed, callback) {
 /**
  * saveGuideTeam — Save team formation during tutorial.
  *
- * CLIENT REQUEST:
- * {
- *   type: "hangup",
- *   action: "saveGuideTeam",
- *   userId: string,
- *   team: [{heroId, position}, ...],
- *   supers: [superSkillId, ...],
- *   version: "1.0"
- * }
+ * GUIDE REQUEST: { type, action, userId, team, supers, version:"1.0" }
+ *   team   = [{heroId, ...}, null, ...] — index=position, null=empty slot
+ *   supers = [superSkillId, ...] — selected super skill IDs
  *
- * CLIENT RESPONSE:
- *   _changeInfo._lastTeam: {} (empty, client proceeds to checkBattleResult)
+ * RESPONSE: client ignores response entirely, proceeds to checkBattleResult.
  *
- * Saves the team to lastTeam._lastTeamInfo[9] (LAST_TEAM_TYPE.HANGUP).
+ * Saves to lastTeam._lastTeamInfo[9] in client-expected LastTeamInfo format:
+ *   _team  = [{_heroId, _position}, ...] — nulls removed, underscore prefix
+ *   _super = [superSkillId, ...] — underscore prefix, no "Skill" suffix
  */
 async function handleSaveGuideTeam(socket, parsed, callback) {
     var userId = parsed.userId;
@@ -536,11 +570,9 @@ async function handleSaveGuideTeam(socket, parsed, callback) {
     var supers = parsed.supers || [];
 
     logger.info('HANGUP', 'saveGuideTeam: userId=' + (userId || '-') +
-        ', teamCount=' + team.length +
-        ', supersCount=' + supers.length);
+        ', teamCount=' + team.length + ', supersCount=' + supers.length);
 
     try {
-        // Load user data
         var gameData = await userDataService.loadUserData(userId, 1);
         if (!gameData) {
             logger.error('HANGUP', 'saveGuideTeam: user data not found for userId=' + userId);
@@ -548,17 +580,21 @@ async function handleSaveGuideTeam(socket, parsed, callback) {
         }
 
         // Ensure lastTeam structure exists
-        if (!gameData.lastTeam) {
-            gameData.lastTeam = {};
-        }
-        if (!gameData.lastTeam._lastTeamInfo) {
-            gameData.lastTeam._lastTeamInfo = {};
+        if (!gameData.lastTeam) gameData.lastTeam = {};
+        if (!gameData.lastTeam._lastTeamInfo) gameData.lastTeam._lastTeamInfo = {};
+
+        // Transform team to client LastTeamInfo format: remove nulls, add _heroId/_position
+        var formattedTeam = [];
+        for (var i = 0; i < team.length; i++) {
+            if (team[i] != null) {
+                formattedTeam.push({ _heroId: team[i].heroId, _position: i });
+            }
         }
 
-        // Save team to LAST_TEAM_TYPE.HANGUP (type 9)
+        // Save in client-expected LastTeamInfo format
         gameData.lastTeam._lastTeamInfo[LAST_TEAM_TYPE_HANGUP] = {
-            _team: team,
-            _superSkill: supers
+            _team: formattedTeam,
+            _super: supers
         };
 
         // Save to DB
@@ -566,11 +602,7 @@ async function handleSaveGuideTeam(socket, parsed, callback) {
 
         logger.info('HANGUP', 'saveGuideTeam: saved guide team for userId=' + userId);
 
-        callback(RH.success({
-            _changeInfo: {
-                _lastTeam: {}
-            }
-        }));
+        callback(RH.success({}));
 
     } catch (err) {
         logger.error('HANGUP', 'saveGuideTeam error: ' + err.message + ', stack: ' + err.stack);

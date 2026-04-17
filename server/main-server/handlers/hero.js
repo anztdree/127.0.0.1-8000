@@ -279,18 +279,36 @@ var ATTR_ID_NAME = [
 /**
  * Passive skill stat field names that can appear in skillOutBattle.json entries.
  * Used to extract stat bonuses from passive and potential skill configs.
+ *
+ * [BUG 2 FIX] Added 'crticalDamageResist' (typo) — the JSON config files use this
+ * misspelled key exclusively (1060 occurrences in skillOutBattle.json).
+ * The correctly-spelled 'criticalDamageResist' does NOT exist in any config file.
+ * Client code (line 78600) also reads: p.crticalDamageResist (same typo).
+ *
+ * PASSIVE_STAT_FIELD_MAP maps typo/misnamed fields to their canonical attribute name
+ * so the output dict always uses correct keys that exist in ABILITY_NAME.
  */
 var PASSIVE_STAT_FIELDS = [
     'hp', 'attack', 'armor', 'speed',
     'hpPercent', 'attackPercent', 'armorPercent', 'speedPercent',
     'hit', 'dodge', 'block', 'blockEffect',
     'skillDamage', 'critical', 'criticalResist',
-    'criticalDamage', 'criticalDamageResist', 'armorBreak',
+    'criticalDamage', 'criticalDamageResist', 'crticalDamageResist', 'armorBreak',
     'damageReduce', 'controlResist', 'controlAdd',
     'trueDamage', 'superDamage', 'superDamageResist',
     'healPlus', 'healerPlus', 'shielderPlus', 'blockThrough',
     'bloodDamage', 'bloodResist'
 ];
+
+/**
+ * Maps raw config field names to canonical attribute names.
+ * Used when reading passive/potential skill stat bonuses from skillOutBattle.json.
+ * Config files use typos (e.g. 'crticalDamageResist') that must be normalized
+ * before being stored in the attribute dictionary.
+ */
+var PASSIVE_STAT_FIELD_MAP = {
+    'crticalDamageResist': 'criticalDamageResist'
+};
 
 /**
  * Hero type enum for qigong matching.
@@ -820,32 +838,11 @@ function getSelfBreakEntry(breakType, breakLevel, level, breakType2) {
     return null;
 }
 
-/**
- * Get selfBreak training entry for break type and level position.
- * selfBreak.json: keyed sequentially, each has
- *   { breakType, breakLevel, level, levelNeeded, costID1, costNum1,
- *     ability1, abilityID1, value1, abilityAffected1, ... }
- *
- * @param {string} breakType - e.g. "break_damageUp"
- * @param {number} breakLevel - Current break tier (1-6+)
- * @param {number} level - Position within tier (1-21)
- * @returns {object|null} Training node entry
+/* 
+ * NOTE: 3-param getSelfBreakEntry removed — was shadowing the 4-param version above.
+ * All call sites use 4 params: getSelfBreakEntry(breakType, breakLevel, level, breakType2).
+ * The 4-param version handles breakType2 as optional, so it works for all cases.
  */
-function getSelfBreakEntry(breakType, breakLevel, level) {
-    var config = GameData.get('selfBreak');
-    if (!config) return null;
-
-    var keys = Object.keys(config);
-    for (var i = 0; i < keys.length; i++) {
-        var entry = config[keys[i]];
-        if (entry.breakType === breakType &&
-            entry.breakLevel === breakLevel &&
-            entry.level === level) {
-            return entry;
-        }
-    }
-    return null;
-}
 
 /**
  * Get all selfBreak training entries for a break type and level.
@@ -1000,6 +997,9 @@ function addAttrToDict(dict, attrName, value) {
  * Get qigong quality multiplier for a given evolveLevel.
  * qigongQualityMaxPara.json: keys "1"-"7", each has hpMaxPara, attackMaxPara, armorMaxPara.
  *
+ * NOTE: This uses dynamic quality from evolveLevel. For the correct client-matching behavior,
+ * use getQigongQualityMaxParaForQuality(baseQuality) instead — client matches by hero.json quality.
+ *
  * @param {number} evolveLevel - Current evolve level
  * @returns {object} { hpMaxPara, attackMaxPara, armorMaxPara } (default 1 for each)
  */
@@ -1016,6 +1016,33 @@ function getQigongQualityMaxPara(evolveLevel) {
         attackMaxPara: entry.attackMaxPara || 1,
         armorMaxPara: entry.armorMaxPara || 1
     };
+}
+
+/**
+ * Get qigong quality multiplier by quality name string.
+ * [BUG 4 FIX] Client (line 78548): h.quality === i.quality where i = hero info from hero.json.
+ * qigongQualityMaxPara.json: keys "1"-"7", each has { quality, hpMaxPara, attackMaxPara, armorMaxPara }.
+ *
+ * @param {string} qualityName - Quality tier name from hero.json (e.g. "green", "orange")
+ * @returns {object} { hpMaxPara, attackMaxPara, armorMaxPara } (default 1 for each)
+ */
+function getQigongQualityMaxParaForQuality(qualityName) {
+    var config = GameData.get('qigongQualityMaxPara');
+    if (!config) return { hpMaxPara: 1, attackMaxPara: 1, armorMaxPara: 1 };
+
+    // Client iterates all entries and matches by quality string: h.quality === i.quality
+    var keys = Object.keys(config);
+    for (var i = 0; i < keys.length; i++) {
+        var entry = config[keys[i]];
+        if (entry.quality === qualityName) {
+            return {
+                hpMaxPara: entry.hpMaxPara || 1,
+                attackMaxPara: entry.attackMaxPara || 1,
+                armorMaxPara: entry.armorMaxPara || 1
+            };
+        }
+    }
+    return { hpMaxPara: 1, attackMaxPara: 1, armorMaxPara: 1 };
 }
 
 /**
@@ -1113,7 +1140,9 @@ function getPotentialSkillAttr(potentialId, currentLevel) {
                 if (val !== undefined && val !== null && val !== '') {
                     var numVal = Number(val);
                     if (!isNaN(numVal) && numVal !== 0) {
-                        attrs[fieldName] = numVal;
+                        // [BUG 2 FIX] Normalize field name (e.g. crticalDamageResist → criticalDamageResist)
+                        var canonicalName = PASSIVE_STAT_FIELD_MAP[fieldName] || fieldName;
+                        attrs[canonicalName] = numVal;
                     }
                 }
             }
@@ -1128,7 +1157,13 @@ function getPotentialSkillAttr(potentialId, currentLevel) {
  * Passive sources include:
  *   - skillPassive1/2/3 from hero.json (with passiveLevel1/2/3)
  *   - skillPassive1ID/skillPassive1Level from heroEvolve entries (override hero.json when evolve >= entry level)
+ *   - redPassive1/2/3 from hero.json (with redPassiveLevel1/2/3) — red-tier awakened passives
+ *   - redPassive1ID/Level from heroEvolve entries (override hero.json red passives)
  *   - potential1/2/3 from hero.json (with _potential1Level/_potential2Level/_potential3Level from heroData)
+ *
+ * Client reference: makeHeroPassiveSkillAttr (line 78578-78632)
+ *   Processes: skillPassive (from evolve entry matching current evolveLevel) → potential → redPassive (if isRed)
+ *   setHeroPassiveSkillState (line 85519-85537): adds redPassive skills to hero model
  *
  * @param {object} heroInfo - Hero config entry from hero.json
  * @param {number} evolveLevel - Current evolve level
@@ -1196,7 +1231,9 @@ function collectPassiveAttrs(heroInfo, evolveLevel, heroData) {
                 if (fval !== undefined && fval !== null && fval !== '') {
                     var fnum = Number(fval);
                     if (!isNaN(fnum) && fnum !== 0) {
-                        addAttrToDict(passiveAttrs, field, fnum);
+                        // [BUG 2 FIX] Normalize field name (e.g. crticalDamageResist → criticalDamageResist)
+                        var canonicalField = PASSIVE_STAT_FIELD_MAP[field] || field;
+                        addAttrToDict(passiveAttrs, canonicalField, fnum);
                     }
                 }
             }
@@ -1216,6 +1253,75 @@ function collectPassiveAttrs(heroInfo, evolveLevel, heroData) {
         var potKeys = Object.keys(potAttrs);
         for (var pk = 0; pk < potKeys.length; pk++) {
             addAttrToDict(passiveAttrs, potKeys[pk], potAttrs[potKeys[pk]]);
+        }
+    }
+
+    // --- Process redPassive1, redPassive2, redPassive3 ---
+    // [BUG 5 FIX] Red-tier passive skills from hero.json / heroEvolve entries.
+    // Client (line 78616-78630): if(r) { for redPassive1..3: read skillOutBattle attrs }
+    // Client setHeroPassiveSkillState (line 85526-85537): adds redPassive skills to model.
+    // heroEvolve entries can have redPassive1ID/Level overriding hero.json redPassive1/Level.
+    var hasRedPassive = heroInfo['redPassive1'] ||
+                       heroInfo['redPassive2'] ||
+                       heroInfo['redPassive3'];
+
+    if (hasRedPassive) {
+        // Determine redPassive overrides from heroEvolve entries
+        var redPassiveOverrides = {
+            1: { id: null, level: null, evolveLevel: -1 },
+            2: { id: null, level: null, evolveLevel: -1 },
+            3: { id: null, level: null, evolveLevel: -1 }
+        };
+
+        if (evolveEntries && Array.isArray(evolveEntries)) {
+            for (var rpi = 0; rpi < evolveEntries.length; rpi++) {
+                var rpe = evolveEntries[rpi];
+                if (rpe.level > evolveLevel) continue;
+
+                for (var rslot = 1; rslot <= 3; rslot++) {
+                    var rpidField = 'redPassive' + rslot + 'ID';
+                    var rplvlField = 'redPassive' + rslot + 'Level';
+                    if (rpe[rpidField] != null && rpe[rplvlField] != null) {
+                        redPassiveOverrides[rslot] = {
+                            id: rpe[rpidField],
+                            level: rpe[rplvlField],
+                            evolveLevel: rpe.level
+                        };
+                    }
+                }
+            }
+        }
+
+        for (var rp = 1; rp <= 3; rp++) {
+            var rSkillId, rSkillLevel;
+
+            // Check evolve override first
+            if (redPassiveOverrides[rp].id != null) {
+                rSkillId = redPassiveOverrides[rp].id;
+                rSkillLevel = redPassiveOverrides[rp].level;
+            } else {
+                // Fall back to hero.json
+                rSkillId = heroInfo['redPassive' + rp];
+                rSkillLevel = heroInfo['redPassiveLevel' + rp];
+            }
+
+            if (!rSkillId || !rSkillLevel) continue;
+
+            // Look up skillOutBattle — same logic as skillPassive
+            var rSkillEntry = getSkillOutBattleAttr(rSkillId, rSkillLevel);
+            if (rSkillEntry) {
+                for (var rfi = 0; rfi < PASSIVE_STAT_FIELDS.length; rfi++) {
+                    var rfield = PASSIVE_STAT_FIELDS[rfi];
+                    var rfval = rSkillEntry[rfield];
+                    if (rfval !== undefined && rfval !== null && rfval !== '') {
+                        var rfnum = Number(rfval);
+                        if (!isNaN(rfnum) && rfnum !== 0) {
+                            var rCanonical = PASSIVE_STAT_FIELD_MAP[rfield] || rfield;
+                            addAttrToDict(passiveAttrs, rCanonical, rfnum);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1262,12 +1368,19 @@ function calculateHeroAttrs(heroData, gameData) {
     var quality = getQualityFromEvolve(evolveLevel);
     var qualityIndex = getQualityIndexFromEvolve(evolveLevel);
 
+    // Base quality from hero.json — STATIC, used for qualityParam and qigongQualityMaxPara
+    // Client (line 78517): ReadJsonSingleton.heroQualityParam[i.quality]
+    // Client (line 78548): h.quality === i.quality  (i = hero info from hero.json)
+    var baseQuality = heroInfo ? String(heroInfo.quality || 'white').toLowerCase() : 'white';
+
     // Get config multipliers
     var typeParam = getHeroTypeParam(heroType) || {
         hpParam: 1, attackParam: 1, armorParam: 1,
         hpBais: 0, attackBais: 0, armorBais: 0
     };
-    var qualParam = getQualityParam(quality) || { hpParam: 1, attackParam: 1, armorParam: 1 };
+    // [BUG 3 FIX] qualityParam uses STATIC base quality from hero.json, NOT dynamic from evolveLevel
+    // Client (line 78517): heroQualityParam[i.quality] where i = hero info from hero.json
+    var qualParam = getQualityParam(baseQuality) || { hpParam: 1, attackParam: 1, armorParam: 1 };
     var levelUpMul = getLevelUpMul(quality, evolveLevel);
     var levelBase = getLevelBaseAttr(level);
 
@@ -1328,7 +1441,9 @@ function calculateHeroAttrs(heroData, gameData) {
 
     // === STEP 6: Qigong bonuses (with quality multiplier) ===
     var qigongHP = 0, qigongAttack = 0, qigongArmor = 0;
-    var qigongQualityMul = getQigongQualityMaxPara(evolveLevel);
+    // [BUG 4 FIX] qigongQualityMaxPara uses STATIC base quality from hero.json
+    // Client (line 78548): h.quality === i.quality (i.quality = hero.json quality)
+    var qigongQualityMul = getQigongQualityMaxParaForQuality(baseQuality);
 
     if (heroData._qigong && heroData._qigong._items) {
         var qItems = heroData._qigong._items;
@@ -1454,6 +1569,12 @@ function calculateHeroAttrs(heroData, gameData) {
     baseItems.push({ _id: 41, _num: heroEnergyMax });            // energyMax
 
     // === Build _totalAttr._items (all non-zero attributes) ===
+    // [BUG 1 FIX] Add hero.json base stats to totalAttr.
+    // Client makeHeroBasicAttr (line 78577) adds these from hero.json config:
+    //   hit, dodge, block, damageReduce, armorBreak, controlResist,
+    //   skillDamage, criticalDamage, blockEffect, critical, criticalResist,
+    //   trueDamage, healPlus, healerPlus, talent
+    // These are STATIC values from the hero template, added directly to totalAttr.
     var totalDict = {};
     totalDict['hp'] = totalHP;
     totalDict['attack'] = totalAttack;
@@ -1461,6 +1582,27 @@ function calculateHeroAttrs(heroData, gameData) {
     totalDict['speed'] = totalSpeed;
     totalDict['power'] = zPower;
     totalDict['energyMax'] = heroEnergyMax;
+
+    // Add static base stats from hero.json config
+    if (heroInfo) {
+        var BASE_STAT_FIELDS = [
+            'hit', 'dodge', 'block', 'damageReduce', 'armorBreak',
+            'controlResist', 'skillDamage', 'criticalDamage', 'blockEffect',
+            'critical', 'criticalResist', 'trueDamage', 'healPlus', 'healerPlus'
+        ];
+        for (var bsi = 0; bsi < BASE_STAT_FIELDS.length; bsi++) {
+            var bsf = BASE_STAT_FIELDS[bsi];
+            var bsv = heroInfo[bsf];
+            if (bsv != null && bsv !== 0) {
+                addAttrToDict(totalDict, bsf, bsv);
+            }
+        }
+        // Talent is handled separately (included in baseItems and multiplied into hp/attack)
+        // But also added to totalAttr for display
+        if (heroInfo.talent != null && heroInfo.talent !== 0) {
+            addAttrToDict(totalDict, 'talent', totalTalent);
+        }
+    }
 
     // Add passive attributes (except hp/attack/armor which are already included)
     var passKeys = Object.keys(passiveAttrs);

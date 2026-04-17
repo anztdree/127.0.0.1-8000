@@ -91,7 +91,7 @@ function ensureTable() {
         '  user_id VARCHAR(64) NOT NULL COMMENT "userId of commenter",' +
         '  detail TEXT NOT NULL COMMENT "Comment text",' +
         '  score INT NOT NULL DEFAULT 0 COMMENT "Rating 2/4/6/8/10",' +
-        '  like_users TEXT NOT NULL DEFAULT "[]"" COMMENT "JSON array of userIds who liked",' +
+        "  like_users TEXT NOT NULL DEFAULT '[]' COMMENT 'JSON array of userIds who liked'," +
         '  nick_name VARCHAR(64) NOT NULL DEFAULT "" COMMENT "Commenter nickname",' +
         '  head_image VARCHAR(256) NOT NULL DEFAULT "" COMMENT "Commenter head image",' +
         '  level INT NOT NULL DEFAULT 1 COMMENT "Commenter player level",' +

@@ -2,17 +2,17 @@
 
 /**
  * =====================================================
- *  activity/exchange/merchantExchange.js
+ *  activity/exchange/timeLimitPropExchange.js
  *  Super Warrior Z Game Server — Main Server
  *
- *  ACTION: merchantExchange
- *  DESC: Exchange goods with activity merchant
+ *  ACTION: timeLimitPropExchange
+ *  DESC: Exchange time-limited prop
  *  TYPE: WRITE
  *
  *  CLIENT REQUEST:
- *    { type:"activity", action:"merchantExchange", actId, userId, num, itemId }
+ *    { type:"activity", action:"timeLimitPropExchange", userId, actId, exchangeType, itemId, displayId }
  *
- *  CLIENT SOURCE: ActivitySetReward.exchangeMerchantReward() (line ~79577)
+ *  CLIENT SOURCE: exchange btn tap (line 97950)
  *
  *  RESPONSE (Universal):
  *    { _changeInfo: { _items: {...} },
@@ -28,7 +28,7 @@ var logger = require('../../../../shared/utils/logger');
 
 function handle(socket, parsed, callback) {
     var userId = parsed.userId;
-    logger.info('ACTIVITY', 'merchantExchange' + ' userId=' + userId);
+    logger.info('ACTIVITY', 'timeLimitPropExchange' + ' userId=' + userId);
 
     // TODO: Implement business logic
 

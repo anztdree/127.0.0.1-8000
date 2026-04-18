@@ -2,17 +2,17 @@
 
 /**
  * =====================================================
- *  activity/task/marketActReward.js
+ *  activity/task/activityGetTaskReward.js
  *  Super Warrior Z Game Server — Main Server
  *
- *  ACTION: marketActReward
- *  DESC: CLAIM market activity task reward
+ *  ACTION: activityGetTaskReward
+ *  DESC: DEFAULT/FALLBACK generic task reward claim
  *  TYPE: WRITE
  *
  *  CLIENT REQUEST:
- *    { type:"activity", action:"marketActReward", actId, userId, pick, itemId }
+ *    { type:"activity", action:"activityGetTaskReward", actId, userId, taskId, pick, actType }
  *
- *  CLIENT SOURCE: ActivitySetReward.marketBattleReward() (line ~79577)
+ *  CLIENT SOURCE: ActivitySetReward.commonGetReward() (line ~79577)
  *
  *  RESPONSE (Universal):
  *    { _changeInfo: { _items: {...} },
@@ -28,7 +28,7 @@ var logger = require('../../../../shared/utils/logger');
 
 function handle(socket, parsed, callback) {
     var userId = parsed.userId;
-    logger.info('ACTIVITY', 'marketActReward' + ' userId=' + userId);
+    logger.info('ACTIVITY', 'activityGetTaskReward' + ' userId=' + userId);
 
     // TODO: Implement business logic
 

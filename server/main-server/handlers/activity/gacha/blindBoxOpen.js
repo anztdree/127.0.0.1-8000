@@ -2,18 +2,18 @@
 
 /**
  * =====================================================
- *  activity/gacha/GARoll.js
+ *  activity/gacha/blindBoxOpen.js
  *  Super Warrior Z Game Server — Main Server
  *
- *  ACTION: GARoll
- *  DESC: Galaxy Adventure dice roll
+ *  ACTION: blindBoxOpen
+ *  DESC: Open/draw a blind box
  *  TYPE: WRITE
  *
  *  CLIENT REQUEST:
- *    { type:"activity", action:"GARoll", userId, actId, version }
+ *    { type:"activity", action:"blindBoxOpen", actId, userId, boxId }
  *
- *  CLIENT SOURCE: MahaAdventure panel (line 89070)
- *  CUSTOM RESPONSE: _boxId, _records[]: { step, event, keyLevel }
+ *  CLIENT SOURCE: OpenBoxRequest() (line 89622)
+ *  CUSTOM RESPONSE: _uact._openBoxPos[]
  *
  *  STATUS: TODO
  * =====================================================
@@ -24,7 +24,7 @@ var logger = require('../../../../shared/utils/logger');
 
 function handle(socket, parsed, callback) {
     var userId = parsed.userId;
-    logger.info('ACTIVITY', 'GARoll' + ' userId=' + userId);
+    logger.info('ACTIVITY', 'blindBoxOpen' + ' userId=' + userId);
 
     // TODO: Implement business logic
 

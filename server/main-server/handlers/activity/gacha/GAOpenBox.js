@@ -2,18 +2,17 @@
 
 /**
  * =====================================================
- *  activity/gacha/GARoll.js
+ *  activity/gacha/GAOpenBox.js
  *  Super Warrior Z Game Server — Main Server
  *
- *  ACTION: GARoll
- *  DESC: Galaxy Adventure dice roll
+ *  ACTION: GAOpenBox
+ *  DESC: Open GA mystery box
  *  TYPE: WRITE
  *
  *  CLIENT REQUEST:
- *    { type:"activity", action:"GARoll", userId, actId, version }
+ *    { type:"activity", action:"GAOpenBox", userId, actId, version }
  *
- *  CLIENT SOURCE: MahaAdventure panel (line 89070)
- *  CUSTOM RESPONSE: _boxId, _records[]: { step, event, keyLevel }
+ *  CLIENT SOURCE: openBoxBtnTap() (line 92808)
  *
  *  STATUS: TODO
  * =====================================================
@@ -24,7 +23,7 @@ var logger = require('../../../../shared/utils/logger');
 
 function handle(socket, parsed, callback) {
     var userId = parsed.userId;
-    logger.info('ACTIVITY', 'GARoll' + ' userId=' + userId);
+    logger.info('ACTIVITY', 'GAOpenBox' + ' userId=' + userId);
 
     // TODO: Implement business logic
 

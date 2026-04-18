@@ -2,18 +2,17 @@
 
 /**
  * =====================================================
- *  activity/gacha/GARoll.js
+ *  activity/gacha/upsetBlindBox.js
  *  Super Warrior Z Game Server — Main Server
  *
- *  ACTION: GARoll
- *  DESC: Galaxy Adventure dice roll
+ *  ACTION: upsetBlindBox
+ *  DESC: Start blind box game
  *  TYPE: WRITE
  *
  *  CLIENT REQUEST:
- *    { type:"activity", action:"GARoll", userId, actId, version }
+ *    { type:"activity", action:"upsetBlindBox", actId, userId }
  *
- *  CLIENT SOURCE: MahaAdventure panel (line 89070)
- *  CUSTOM RESPONSE: _boxId, _records[]: { step, event, keyLevel }
+ *  CLIENT SOURCE: startGameBtnTap() (line 89594)
  *
  *  STATUS: TODO
  * =====================================================
@@ -24,7 +23,7 @@ var logger = require('../../../../shared/utils/logger');
 
 function handle(socket, parsed, callback) {
     var userId = parsed.userId;
-    logger.info('ACTIVITY', 'GARoll' + ' userId=' + userId);
+    logger.info('ACTIVITY', 'upsetBlindBox' + ' userId=' + userId);
 
     // TODO: Implement business logic
 

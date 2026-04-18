@@ -2,18 +2,18 @@
 
 /**
  * =====================================================
- *  activity/gacha/GARoll.js
+ *  activity/gacha/turnTable.js
  *  Super Warrior Z Game Server — Main Server
  *
- *  ACTION: GARoll
- *  DESC: Galaxy Adventure dice roll
+ *  ACTION: turnTable
+ *  DESC: Turn table spin
  *  TYPE: WRITE
  *
  *  CLIENT REQUEST:
- *    { type:"activity", action:"GARoll", userId, actId, version }
+ *    { type:"activity", action:"turnTable", actId, userId, times, version }
  *
- *  CLIENT SOURCE: MahaAdventure panel (line 89070)
- *  CUSTOM RESPONSE: _boxId, _records[]: { step, event, keyLevel }
+ *  CLIENT SOURCE: askServerTurn() (line 96244)
+ *  CUSTOM RESPONSE: _rdIds[], _uact._rewardRecords[]
  *
  *  STATUS: TODO
  * =====================================================
@@ -24,7 +24,7 @@ var logger = require('../../../../shared/utils/logger');
 
 function handle(socket, parsed, callback) {
     var userId = parsed.userId;
-    logger.info('ACTIVITY', 'GARoll' + ' userId=' + userId);
+    logger.info('ACTIVITY', 'turnTable' + ' userId=' + userId);
 
     // TODO: Implement business logic
 

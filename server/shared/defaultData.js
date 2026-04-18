@@ -15,6 +15,8 @@
  * where `e` is the parsed JSON from the enterGame response.
  */
 
+const GameData = require('./gameData/loader');
+
 const GAME_CONSTANTS = {
     // From resource/json/constant.json[1]
     startUserLevel: 1,
@@ -57,12 +59,36 @@ const ITEM_IDS = {
  *
  * Client: setBackpack(e) reads e.totalProps._items as {[itemId]: {_id, _num}}
  * From constant.json: startDiamond=0, startGold=0, startUserLevel=1
+ *
+ * BUG FIX: thingsID.json has a `startNum` field per item that defines the starting
+ * quantity for new players. The old code hardcoded all items to 0 (from constant.json),
+ * ignoring thingsID.json entirely. This caused the tutorial to break at step 2301 (Upgrade)
+ * because players had 0 Exp Capsules and 0 Gold when the tutorial expects them to upgrade.
+ *
+ * thingsID.json startNum values:
+ *   Gold (102)         -> startNum: 10000
+ *   Exp Capsule (131)  -> startNum: 1000
+ *   God Water (134)    -> startNum: 50
+ *
+ * Now reads startNum from thingsID.json at runtime (GameData is loaded before
+ * generateNewUserData is called from enterGame handler).
  */
 function generateDefaultTotalProps() {
+    var thingsID = GameData.get('thingsID');
+    var startNumMap = {};
+    if (thingsID) {
+        for (var key in thingsID) {
+            var item = thingsID[key];
+            if (item && item.id != null && item.startNum != null) {
+                startNumMap[item.id] = item.startNum;
+            }
+        }
+    }
+
     return {
         _items: {
-            [ITEM_IDS.DIAMONDID]: { _id: ITEM_IDS.DIAMONDID, _num: GAME_CONSTANTS.startDiamond },
-            [ITEM_IDS.GOLDID]: { _id: ITEM_IDS.GOLDID, _num: GAME_CONSTANTS.startGold },
+            [ITEM_IDS.DIAMONDID]: { _id: ITEM_IDS.DIAMONDID, _num: startNumMap[101] || GAME_CONSTANTS.startDiamond },
+            [ITEM_IDS.GOLDID]: { _id: ITEM_IDS.GOLDID, _num: startNumMap[102] || GAME_CONSTANTS.startGold },
             [ITEM_IDS.PLAYEREXPERIENCEID]: { _id: ITEM_IDS.PLAYEREXPERIENCEID, _num: GAME_CONSTANTS.startUserExp },
             [ITEM_IDS.PLAYERLEVELID]: { _id: ITEM_IDS.PLAYERLEVELID, _num: GAME_CONSTANTS.startUserLevel },
             [ITEM_IDS.PLAYERVIPEXPERIENCEID]: { _id: ITEM_IDS.PLAYERVIPEXPERIENCEID, _num: 0 },
@@ -73,9 +99,9 @@ function generateDefaultTotalProps() {
             [ITEM_IDS.SnakeCoinID]: { _id: ITEM_IDS.SnakeCoinID, _num: 0 },
             [ITEM_IDS.TeamCoinID]: { _id: ITEM_IDS.TeamCoinID, _num: 0 },
             [ITEM_IDS.HonourCoinID]: { _id: ITEM_IDS.HonourCoinID, _num: 0 },
-            [ITEM_IDS.EXPERIENCECAPSULEID]: { _id: ITEM_IDS.EXPERIENCECAPSULEID, _num: 0 },
-            [ITEM_IDS.EVOLVECAPSULEID]: { _id: ITEM_IDS.EVOLVECAPSULEID, _num: 0 },
-            [ITEM_IDS.EnergyStone]: { _id: ITEM_IDS.EnergyStone, _num: 0 },
+            [ITEM_IDS.EXPERIENCECAPSULEID]: { _id: ITEM_IDS.EXPERIENCECAPSULEID, _num: startNumMap[131] || 0 },
+            [ITEM_IDS.EVOLVECAPSULEID]: { _id: ITEM_IDS.EVOLVECAPSULEID, _num: startNumMap[132] || 0 },
+            [ITEM_IDS.EnergyStone]: { _id: ITEM_IDS.EnergyStone, _num: startNumMap[136] || 0 },
         },
     };
 }
